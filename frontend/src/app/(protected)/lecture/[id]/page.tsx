@@ -231,11 +231,11 @@ const SUMMARY_FORMATS = [
 ];
 
 const QUESTION_TYPES = [
-    { key: "mcq", label: "MCQs", desc: "10 multiple choice", icon: PenLine, color: "#6366f1" },
-    { key: "short", label: "Short Answer", desc: "10 short questions", icon: FileEdit, color: "#8b5cf6" },
-    { key: "long", label: "Long Answer", desc: "5 detailed questions", icon: FileText, color: "#a855f7" },
-    { key: "flashcards", label: "Flashcards", desc: "15 study cards", icon: FlipHorizontal, color: "#ec4899" },
-    { key: "mixed", label: "Full Test", desc: "Complete practice test", icon: ListChecks, color: "#10b981" },
+    { key: "mcq", label: "MCQs", desc: "10 multiple choice", icon: PenLine, color: "#00D4FF" },
+    { key: "short", label: "Short Answer", desc: "10 short questions", icon: FileEdit, color: "#FF6B2B" },
+    { key: "long", label: "Long Answer", desc: "5 detailed questions", icon: FileText, color: "#00D4FF" },
+    { key: "flashcards", label: "Flashcards", desc: "15 study cards", icon: FlipHorizontal, color: "#FF6B2B" },
+    { key: "mixed", label: "Full Test", desc: "Complete practice test", icon: ListChecks, color: "#00D4FF" },
 ];
 
 const ACTION_PLAN_SECTIONS = [
@@ -658,7 +658,7 @@ export default function LectureDetailPage() {
             )}
 
             {shareAllSuccess && (
-                <div className="alert" style={{ marginBottom: "16px", background: "rgba(16,185,129,0.12)", color: "var(--accent-400)" }}>
+                <div className="alert" style={{ marginBottom: "16px", background: "rgba(255,107,43,0.15)", color: "#FF6B2B" }}>
                     {shareAllSuccess}
                 </div>
             )}

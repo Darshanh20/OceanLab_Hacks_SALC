@@ -49,12 +49,29 @@ class OrganizationService:
     @staticmethod
     async def get_organization_members(org_id: str) -> List[dict]:
         supabase = get_supabase()
+        # Fetch org_members
         result = supabase.table("org_members") \
-            .select("*, users(email)") \
+            .select("id, org_id, user_id, role, joined_at") \
             .eq("org_id", org_id) \
             .execute()
 
         members = result.data or []
+        
+        # Fetch user emails for all member user_ids
+        user_ids = [m.get("user_id") for m in members if m.get("user_id")]
+        users_map = {}
+        if user_ids:
+            users_result = supabase.table("users") \
+                .select("id, email") \
+                .in_("id", user_ids) \
+                .execute()
+            for user in users_result.data or []:
+                users_map[user.get("id")] = user
+        
+        # Add users data to members
+        for member in members:
+            user_id = member.get("user_id")
+            member["users"] = users_map.get(user_id, {})
 
         groups_result = (
             supabase.table("groups")

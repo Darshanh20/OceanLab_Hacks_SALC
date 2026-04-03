@@ -13,3 +13,4 @@ fpdf2==2.8.1
 pypdf
 python-docx
 python-pptx
+yt-dlp

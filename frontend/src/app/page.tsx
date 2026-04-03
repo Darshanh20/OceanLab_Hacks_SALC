@@ -2,18 +2,18 @@ import Link from "next/link";
 import { FileText, Mic, MessageSquare, Link2, FileEdit, CheckSquare, Tag, Upload, BarChart3, Zap, Lock, Users, Sparkles, ArrowRight } from "lucide-react";
 
 const features = [
-  { icon: FileText, title: "Document Intelligence", desc: "Index PDFs, DOCX, and PPTX to create a searchable company knowledge base.", color: "#6366f1" },
-  { icon: Mic, title: "Meeting Intelligence", desc: "Transcribe meeting audio/video with speaker-aware text extraction.", color: "#8b5cf6" },
-  { icon: MessageSquare, title: "RAG Smart Querying", desc: "Ask natural-language questions and get grounded answers from internal data.", color: "#a855f7" },
-  { icon: Link2, title: "Source-Cited Answers", desc: "Return responses with source references so teams can verify quickly.", color: "#ec4899" },
-  { icon: FileEdit, title: "Auto Summaries", desc: "Generate concise summaries and key points from long documents and meetings.", color: "#10b981" },
-  { icon: CheckSquare, title: "Action Items", desc: "Extract tasks, owners, and follow-ups from meeting transcripts.", color: "#14b8a6" },
-  { icon: Tag, title: "Keyword & Topic Mining", desc: "Surface important entities, terms, and recurring topics across files.", color: "#f59e0b" },
-  { icon: Upload, title: "Structured Export", desc: "Export results as PDF, Markdown, TXT, or JSON for downstream workflows.", color: "#ef4444" },
-  { icon: BarChart3, title: "Usage Analytics", desc: "Track processing status, completion trends, and content volume insights.", color: "#3b82f6" },
-  { icon: Zap, title: "Fast Retrieval", desc: "Vector search plus chunking gives high-signal answers with low latency.", color: "#f97316" },
-  { icon: Lock, title: "Private Workspace", desc: "Each user sees only their own uploaded assets and generated outputs.", color: "#6366f1" },
-  { icon: Users, title: "Slack-Ready Workflow", desc: "Designed for enterprise assistant flows and team collaboration use-cases.", color: "#8b5cf6" },
+  { icon: FileText, title: "Document Intelligence", desc: "Index PDFs, DOCX, and PPTX to create a searchable company knowledge base.", color: "#00D4FF" },
+  { icon: Mic, title: "Meeting Intelligence", desc: "Transcribe meeting audio/video with speaker-aware text extraction.", color: "#FF6B2B" },
+  { icon: MessageSquare, title: "RAG Smart Querying", desc: "Ask natural-language questions and get grounded answers from internal data.", color: "#00D4FF" },
+  { icon: Link2, title: "Source-Cited Answers", desc: "Return responses with source references so teams can verify quickly.", color: "#FF6B2B" },
+  { icon: FileEdit, title: "Auto Summaries", desc: "Generate concise summaries and key points from long documents and meetings.", color: "#00D4FF" },
+  { icon: CheckSquare, title: "Action Items", desc: "Extract tasks, owners, and follow-ups from meeting transcripts.", color: "#FF6B2B" },
+  { icon: Tag, title: "Keyword & Topic Mining", desc: "Surface important entities, terms, and recurring topics across files.", color: "#00D4FF" },
+  { icon: Upload, title: "Structured Export", desc: "Export results as PDF, Markdown, TXT, or JSON for downstream workflows.", color: "#FF6B2B" },
+  { icon: BarChart3, title: "Usage Analytics", desc: "Track processing status, completion trends, and content volume insights.", color: "#00D4FF" },
+  { icon: Zap, title: "Fast Retrieval", desc: "Vector search plus chunking gives high-signal answers with low latency.", color: "#FF6B2B" },
+  { icon: Lock, title: "Private Workspace", desc: "Each user sees only their own uploaded assets and generated outputs.", color: "#00D4FF" },
+  { icon: Users, title: "Slack-Ready Workflow", desc: "Designed for enterprise assistant flows and team collaboration use-cases.", color: "#FF6B2B" },
 ];
 
 export default function LandingPage() {

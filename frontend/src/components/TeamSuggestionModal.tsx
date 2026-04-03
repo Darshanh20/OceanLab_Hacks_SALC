@@ -293,7 +293,7 @@ export default function TeamSuggestionModal({
                                                             <p className="team-description">{team.description}</p>
                                                         )}
                                                         <p className="team-reason">
-                                                            <span className="reason-badge" style={{ backgroundColor: "rgba(16, 185, 129, 0.2)", color: "#34d399" }}>
+                                                            <span className="reason-badge" style={{ backgroundColor: "rgba(57, 255, 20, 0.2)", color: "#39FF14" }}>
                                                                 Manual override
                                                             </span>
                                                         </p>

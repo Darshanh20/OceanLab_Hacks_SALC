@@ -27,6 +27,8 @@ async def transcribe_audio(audio_url: str) -> dict:
         "utterances": "true",
         "detect_language": "true",
         "paragraphs": "true",
+        "summarize": "true",
+        "topics": "true",
     }
 
     async with httpx.AsyncClient(timeout=600.0) as client:
@@ -88,6 +90,13 @@ async def transcribe_audio(audio_url: str) -> dict:
         if words:
             duration = round(words[-1].get("end", 0), 2)
 
+        # Summary (from Deepgram)
+        summary_data = result.get("summary", {})
+        summary_text = summary_data.get("short", "") or summary_data.get("text", "")
+
+        # Topics/Chapters (from Deepgram)
+        topics = result.get("topics", [])
+
         return {
             "transcript_text": transcript_text,
             "utterances": structured_utterances,
@@ -95,4 +104,104 @@ async def transcribe_audio(audio_url: str) -> dict:
             "detected_language": detected_lang,
             "duration_seconds": duration,
             "word_count": len(words),
+            "summary_text": summary_text,
+            "topics": topics,
+        }
+
+
+async def transcribe_audio_deepgram(file_path: str) -> dict:
+    """
+    Transcribe local audio file using Deepgram API.
+    Handles file uploading with multi-part form data.
+    """
+    if not DEEPGRAM_API_KEY:
+        raise RuntimeError("DEEPGRAM_API_KEY is not set")
+
+    params = {
+        "model": "nova-2",
+        "smart_format": "true",
+        "punctuate": "true",
+        "diarize": "true",
+        "utterances": "true",
+        "detect_language": "true",
+        "paragraphs": "true",
+        "summarize": "true",
+        "topics": "true",
+    }
+
+    async with httpx.AsyncClient(timeout=600.0) as client:
+        # Read file and send as multipart
+        with open(file_path, "rb") as f:
+            files = {"file": (file_path.split("/")[-1], f, "audio/mpeg")}
+            response = await client.post(
+                DEEPGRAM_URL,
+                headers={"Authorization": f"Token {DEEPGRAM_API_KEY}"},
+                params=params,
+                files=files,
+            )
+
+        if response.status_code != 200:
+            raise RuntimeError(
+                f"Deepgram API error: {response.status_code} - {response.text}"
+            )
+
+        data = response.json()
+        result = data.get("results", {})
+        channels = result.get("channels", [{}])
+        channel = channels[0] if channels else {}
+        alternatives = channel.get("alternatives", [{}])
+        alt = alternatives[0] if alternatives else {}
+
+        # Full transcript text
+        transcript_text = alt.get("transcript", "")
+
+        # Word-level data with timestamps and speaker labels
+        words = alt.get("words", [])
+
+        # Utterances (sentence-level with speaker + timestamps)
+        utterances = result.get("utterances", [])
+
+        # Detected language
+        detected_lang = channel.get("detected_language", "en")
+
+        # Build structured transcript with speakers and timestamps
+        structured_utterances = []
+        for utt in utterances:
+            structured_utterances.append({
+                "speaker": utt.get("speaker", 0),
+                "start": round(utt.get("start", 0), 2),
+                "end": round(utt.get("end", 0), 2),
+                "text": utt.get("transcript", ""),
+            })
+
+        # Get unique speakers
+        speakers = list(set(u.get("speaker", 0) for u in utterances))
+        speaker_labels = {}
+        for i, sp in enumerate(sorted(speakers)):
+            if i == 0:
+                speaker_labels[sp] = "Speaker 1 (Faculty)"
+            else:
+                speaker_labels[sp] = f"Speaker {i + 1} (Student)"
+
+        # Duration
+        duration = 0
+        if words:
+            duration = round(words[-1].get("end", 0), 2)
+
+        # Summary (from Deepgram)
+        summary_data = result.get("summary", {})
+        summary_text = summary_data.get("short", "") or summary_data.get("text", "")
+
+        # Topics/Chapters (from Deepgram)
+        topics = result.get("topics", [])
+
+        return {
+            "transcript_text": transcript_text,
+            "utterances": structured_utterances,
+            "speaker_labels": speaker_labels,
+            "detected_language": detected_lang,
+            "duration_seconds": duration,
+            "word_count": len(words),
+            "summary_text": summary_text,
+            "topics": topics,
         }

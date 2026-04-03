@@ -185,7 +185,7 @@ export default function WorkspaceViewPage() {
                         </div>
                         <div className="card-body" style={{ padding: "12px" }}>
                             {teams.length === 0 ? (
-                                <div style={{ fontSize: "0.85rem", color: "#94a3b8", textAlign: "center", padding: "20px 12px" }}>
+                                <div style={{ fontSize: "0.85rem", color: "#aaaaaa", textAlign: "center", padding: "20px 12px" }}>
                                     No teams in this workspace yet
                                 </div>
                             ) : (
@@ -195,8 +195,8 @@ export default function WorkspaceViewPage() {
                                         onClick={() => setSelectedTeamId(null)}
                                         style={{
                                             justifyContent: "flex-start",
-                                            background: selectedTeamId === null ? "rgba(34, 211, 238, 0.1)" : "transparent",
-                                            color: selectedTeamId === null ? "#22d3ee" : "var(--text-secondary)",
+                                            background: selectedTeamId === null ? "rgba(0, 212, 255, 0.1)" : "transparent",
+                                            color: selectedTeamId === null ? "#00D4FF" : "var(--text-secondary)",
                                             borderRadius: "6px",
                                             padding: "8px 12px",
                                             fontSize: "0.9rem",
@@ -211,8 +211,8 @@ export default function WorkspaceViewPage() {
                                             onClick={() => setSelectedTeamId(team.id)}
                                             style={{
                                                 justifyContent: "flex-start",
-                                                background: selectedTeamId === team.id ? "rgba(34, 211, 238, 0.1)" : "transparent",
-                                                color: selectedTeamId === team.id ? "#22d3ee" : "var(--text-secondary)",
+                                                background: selectedTeamId === team.id ? "rgba(0, 212, 255, 0.1)" : "transparent",
+                                                color: selectedTeamId === team.id ? "#00D4FF" : "var(--text-secondary)",
                                                 borderRadius: "6px",
                                                 padding: "8px 12px",
                                                 fontSize: "0.9rem",
@@ -234,7 +234,7 @@ export default function WorkspaceViewPage() {
                     <div className="card glass">
                         <div className="card-header section-header-row" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)", padding: "16px 24px" }}>
                             <h3 style={{ display: "flex", alignItems: "center", gap: "10px", margin: 0 }}>
-                                <MessageSquare size={20} color="#22d3ee" /> Workspace Activity
+                                <MessageSquare size={20} color="#FF6B2B" /> Workspace Activity
                             </h3>
                             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                                 <input
@@ -346,7 +346,7 @@ export default function WorkspaceViewPage() {
                             </button>
                         </div>
                         <div className="modal-body" style={{ padding: "16px 24px", marginBottom: "16px" }}>
-                            <p style={{ margin: 0, color: "#e2e8f0" }}>
+                            <p style={{ margin: 0, color: "#cccccc" }}>
                                 Are you sure you want to delete this workspace? This action is permanent and cannot be undone.
                             </p>
                         </div>

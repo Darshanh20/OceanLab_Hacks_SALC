@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect, type ComponentType } from "react";
-import { LayoutDashboard, Upload, Mic, BarChart3, LogOut, Menu, X, Building2, Users, Sparkles } from "lucide-react";
+import { LayoutDashboard, Upload, Mic, BarChart3, LogOut, Menu, X, Building2, Users, Sparkles, Link2 } from "lucide-react";
 import { organizationsAPI } from "@/lib/api";
 import { AppRole, WorkspaceSummary } from "@/types";
+import LinkInput from "@/components/LinkInput";
 
 interface SidebarLink {
     href: string;
@@ -25,6 +26,8 @@ export default function Sidebar() {
     const pathname = usePathname();
     const router = useRouter();
     const [isOpen, setIsOpen] = useState(false);
+    const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
+    const [linkModalMessage, setLinkModalMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
     const [userEmail] = useState(() => {
         if (typeof window === "undefined") return "";
         const storedUser = localStorage.getItem("salc_user");
@@ -132,6 +135,14 @@ export default function Sidebar() {
                         <span className="sidebar-link-icon"><Mic size={18} /></span>
                         Record Meeting
                     </Link>
+                    <button
+                        className="sidebar-link sidebar-link-subtle"
+                        onClick={() => setIsLinkModalOpen(true)}
+                        style={{ border: "none", background: "transparent", cursor: "pointer", width: "100%", textAlign: "left" }}
+                    >
+                        <span className="sidebar-link-icon"><Link2 size={18} style={{ color: "#00D4FF" }} /></span>
+                        Add Link
+                    </button>
                 </nav>
 
                 <div className="sidebar-footer">
@@ -154,6 +165,46 @@ export default function Sidebar() {
                     </button>
                 </div>
             </aside>
+
+            {/* Link Input Modal */}
+            {isLinkModalOpen && (
+                <div className="modal-overlay" onClick={() => setIsLinkModalOpen(false)}>
+                    <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                <Link2 size={20} style={{ color: "#00D4FF" }} />
+                                <span className="modal-title">Add Link</span>
+                            </div>
+                            <button className="modal-close" onClick={() => setIsLinkModalOpen(false)}>
+                                ✕
+                            </button>
+                        </div>
+                        <LinkInput
+                            onSuccess={(lectureId) => {
+                                setLinkModalMessage({ type: "success", text: "Link added successfully!" });
+                                setIsLinkModalOpen(false);
+                                setTimeout(() => setLinkModalMessage(null), 3000);
+                            }}
+                            onError={(error) => {
+                                setLinkModalMessage({ type: "error", text: error });
+                            }}
+                        />
+                        {linkModalMessage && (
+                            <div style={{
+                                marginTop: "16px",
+                                padding: "10px 12px",
+                                borderRadius: "var(--radius-md)",
+                                fontSize: "0.85rem",
+                                background: linkModalMessage.type === "success" ? "rgba(34, 197, 94, 0.1)" : "rgba(255, 107, 43, 0.1)",
+                                border: `1px solid ${linkModalMessage.type === "success" ? "rgba(34, 197, 94, 0.3)" : "rgba(255, 107, 43, 0.25)"}`,
+                                color: linkModalMessage.type === "success" ? "#22c55e" : "#FF6B2B"
+                            }}>
+                                {linkModalMessage.text}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </>
     );
 }

@@ -31,7 +31,7 @@ class UserResponse(BaseModel):
 
 class LectureResponse(BaseModel):
     id: str
-    user_id: str
+    user_id: Optional[str] = None
     title: str
     audio_url: Optional[str] = None
     transcript_text: Optional[str] = None
@@ -40,7 +40,9 @@ class LectureResponse(BaseModel):
     status: str
     org_id: Optional[str] = None
     group_id: Optional[str] = None
+    organization_id: Optional[str] = None
     created_at: Optional[str] = None
+    source: Optional[str] = None
 
     class Config:
         from_attributes = True

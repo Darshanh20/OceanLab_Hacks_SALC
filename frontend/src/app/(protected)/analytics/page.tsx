@@ -82,11 +82,11 @@ export default function AnalyticsPage() {
 
             <div className="dashboard-stats">
                 <div className="stat-card">
-                    <span className="stat-icon-wrap" style={{ background: "rgba(99,102,241,0.12)", color: "#818cf8" }}><BookOpen size={22} /></span>
+                    <span className="stat-icon-wrap" style={{ background: "rgba(0,212,255,0.12)", color: "#00D4FF" }}><BookOpen size={22} /></span>
                     <div><div className="stat-value">{lectures.length}</div><div className="stat-label">Total Knowledge Items</div></div>
                 </div>
                 <div className="stat-card">
-                    <span className="stat-icon-wrap" style={{ background: "rgba(16,185,129,0.12)", color: "#34d399" }}><CheckCircle2 size={22} /></span>
+                    <span className="stat-icon-wrap" style={{ background: "rgba(0,212,255,0.12)", color: "#00D4FF" }}><CheckCircle2 size={22} /></span>
                     <div><div className="stat-value">{completedLectures.length}</div><div className="stat-label">Completed</div></div>
                 </div>
                 <div className="stat-card">
@@ -94,7 +94,7 @@ export default function AnalyticsPage() {
                     <div><div className="stat-value">{formatDuration(totalDuration)}</div><div className="stat-label">Total Duration</div></div>
                 </div>
                 <div className="stat-card">
-                    <span className="stat-icon-wrap" style={{ background: "rgba(168,85,247,0.12)", color: "#a855f7" }}><FileEdit size={22} /></span>
+                    <span className="stat-icon-wrap" style={{ background: "rgba(255,107,43,0.12)", color: "#FF6B2B" }}><FileEdit size={22} /></span>
                     <div><div className="stat-value">{totalWords.toLocaleString()}</div><div className="stat-label">Total Words</div></div>
                 </div>
             </div>
