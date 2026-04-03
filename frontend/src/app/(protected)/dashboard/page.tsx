@@ -110,8 +110,8 @@ export default function DashboardPage() {
                 if (queryGroupId) {
                     setSelectedGroupId(queryGroupId);
                 }
-            } catch {
-                console.error("Failed to fetch filters");
+            } catch (err) {
+                console.error("Failed to fetch filters:", err);
             }
         };
         fetchFilters();

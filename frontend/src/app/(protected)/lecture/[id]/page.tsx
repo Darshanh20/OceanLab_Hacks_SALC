@@ -5,12 +5,13 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { lecturesAPI, analysisAPI, chatAPI, exportAPI } from "@/lib/api";
 import { Lecture, TranscriptData, ChatMessage, ActionTask, ActionPlanJson, ActionPlanSectionResponse } from "@/types";
 import TeamSuggestionModal from "@/components/TeamSuggestionModal";
+import { AiInput003 } from "@/components/ui/ai-input-003";
 import ReactMarkdown from "react-markdown";
 import {
     FileText, BarChart3, BookOpen, Key, HelpCircle, Layers, Zap, MessageSquare,
     Upload, Mic, Brain, CheckCircle2, Clock, ArrowLeft, Download,
     FileDown, FileCode, File, Database, Globe, Users, Calendar, Timer, FileEdit,
-    Send, Bot, User, X, Sparkles, ClipboardList, PenLine, FlipHorizontal, ListChecks, Target, Lightbulb
+    Bot, User, X, Sparkles, ClipboardList, PenLine, FlipHorizontal, ListChecks, Target, Lightbulb
 } from "lucide-react";
 
 // ── Helpers ──
@@ -493,8 +494,8 @@ export default function LectureDetailPage() {
         finally { setTranslating(false); }
     };
 
-    const handleChat = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const handleChat = async (e?: React.FormEvent) => {
+        e?.preventDefault();
         if (!chatInput.trim() || chatLoading) return;
         const question = chatInput.trim();
         setChatInput("");
@@ -1227,12 +1228,19 @@ export default function LectureDetailPage() {
                                     )}
                                     <div ref={chatEndRef} />
                                 </div>
-                                <form className="chat-input-area" onSubmit={handleChat}>
-                                    <input className="chat-input" type="text" placeholder="Ask anything about this document or meeting..." value={chatInput} onChange={(e) => setChatInput(e.target.value)} disabled={chatLoading} />
-                                    <button type="submit" className="chat-send-btn" disabled={!chatInput.trim() || chatLoading}>
-                                        {chatLoading ? <span className="spinner" style={{ width: 16, height: 16, borderWidth: 2, borderColor: "rgba(255,255,255,0.3)", borderTopColor: "white" }} /> : <Send size={18} />}
-                                    </button>
-                                </form>
+                                <div className="chat-input-area">
+                                    <AiInput003
+                                        value={chatInput}
+                                        onChange={setChatInput}
+                                        onSubmit={() => {
+                                            void handleChat();
+                                        }}
+                                        placeholder="Ask anything about this document or meeting..."
+                                        loading={chatLoading}
+                                        disabled={chatLoading}
+                                        className="w-full px-0! py-0!"
+                                    />
+                                </div>
                             </div>
                         )}
                     </div>

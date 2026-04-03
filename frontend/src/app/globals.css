@@ -2193,8 +2193,8 @@ select.dashboard-select option {
 .chat-input-area {
   display: flex;
   gap: 10px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border-subtle);
+  padding-top: 0;
+  border-top: none;
 }
 
 .chat-input {

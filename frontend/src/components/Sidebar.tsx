@@ -76,7 +76,7 @@ export default function Sidebar() {
             <div className={`sidebar-overlay ${isOpen ? "open" : ""}`} onClick={() => setIsOpen(false)} />
 
             <aside className={`sidebar ${isOpen ? "open" : ""}`}>
-                <div className="sidebar-logo">TeamSage</div>
+                <div className="sidebar-logo">SyncMind AI</div>
 
                 <div className="sidebar-context">
                     {hasWorkspace ? (

@@ -4,7 +4,7 @@ import { AuthProvider } from "@/lib/auth";
 import { ThemeProvider } from "@/components/theme-provider";
 
 export const metadata: Metadata = {
-  title: "TeamSage - GenAI Knowledge Assistant",
+  title: "SyncMind AI - GenAI Knowledge Assistant",
   description:
     "Index company PDFs, DOCX, PPTX, audio, and meetings; get RAG-powered answers with source-grounded insights and summaries.",
 };
