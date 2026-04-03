@@ -3,9 +3,9 @@ import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
 
 export const metadata: Metadata = {
-  title: "TeamSage - GenAI Knowledge Assistant",
+  title: "SyncMind AI",
   description:
-    "Index company PDFs, DOCX, PPTX, audio, and meetings; get RAG-powered answers with source-grounded insights and summaries.",
+    "Smart Meeting & Lecture Assistant for Teams",
 };
 
 export default function RootLayout({

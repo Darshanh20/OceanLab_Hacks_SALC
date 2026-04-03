@@ -33,7 +33,7 @@ export default function LoginPage() {
         <div className="auth-page">
             <div className="auth-card">
                 <h1>Welcome back</h1>
-                <p className="auth-subtitle">Sign in to your TeamSage workspace</p>
+                <p className="auth-subtitle">Sign in to your SyncMind AI workspace</p>
 
                 {error && <div className="alert alert-error">{error}</div>}
 

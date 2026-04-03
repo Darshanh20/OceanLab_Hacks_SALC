@@ -3,20 +3,31 @@
 import { useState, useEffect } from "react";
 import { lecturesAPI } from "@/lib/api";
 import { Lecture, TranscriptData } from "@/types";
-import { BookOpen, CheckCircle2, Timer, FileEdit, Calendar, Globe, BarChart3, TrendingUp, Lightbulb, Pin } from "lucide-react";
+import { BookOpen, CheckCircle2, Timer, FileEdit, Calendar, Globe, BarChart3, TrendingUp, Lightbulb, Pin, RotateCcw } from "lucide-react";
 
 export default function AnalyticsPage() {
     const [lectures, setLectures] = useState<Lecture[]>([]);
     const [loading, setLoading] = useState(true);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+
+    const fetchData = async () => {
+        try {
+            const res = await lecturesAPI.list();
+            setLectures(res.data.lectures || []);
+        } catch { /* ignore */ }
+        finally { setLoading(false); }
+    };
+
+    const handleRefreshAnalytics = async () => {
+        setIsRefreshing(true);
+        try {
+            await fetchData();
+        } finally {
+            setIsRefreshing(false);
+        }
+    };
 
     useEffect(() => {
-        const fetchData = async () => {
-            try {
-                const res = await lecturesAPI.list();
-                setLectures(res.data.lectures || []);
-            } catch { /* ignore */ }
-            finally { setLoading(false); }
-        };
         fetchData();
     }, []);
 
@@ -59,6 +70,14 @@ export default function AnalyticsPage() {
                     <h1 className="page-title">Analytics</h1>
                     <p className="page-subtitle">Track knowledge processing, meeting intelligence, and content statistics</p>
                 </div>
+                <button 
+                    className="btn btn-secondary" 
+                    onClick={handleRefreshAnalytics}
+                    disabled={isRefreshing}
+                >
+                    <RotateCcw size={16} style={{ animation: isRefreshing ? 'spin 1s linear infinite' : 'none' }} /> 
+                    <span>{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
+                </button>
             </div>
 
             <div className="dashboard-stats">

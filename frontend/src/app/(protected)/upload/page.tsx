@@ -9,7 +9,6 @@ import {
     FileText,
     CheckCircle2,
     FolderOpen,
-    Upload,
     ArrowUpFromLine, Building2, Users,
 } from "lucide-react";
 import { organizationsAPI, groupsAPI } from "@/lib/api";

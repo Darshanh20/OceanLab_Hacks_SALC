@@ -20,7 +20,7 @@ export default function LandingPage() {
   return (
     <div className="landing">
       <nav className="landing-nav">
-        <div className="landing-logo">TeamSage</div>
+        <div className="landing-logo">SyncMind AI</div>
         <div className="landing-nav-links">
           <Link href="/login" className="btn btn-ghost">Log In</Link>
           <Link href="/register" className="btn btn-primary">Get Started</Link>
