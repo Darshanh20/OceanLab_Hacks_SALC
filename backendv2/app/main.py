@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import auth, lectures, chat, analysis, export, organizations, groups
+from app.routers import auth, lectures, chat, analysis, export, organizations, groups, ingestion, live
 import os
 
 app = FastAPI(
@@ -36,6 +36,8 @@ app.add_middleware(
 
 # Include routers
 app.include_router(auth.router)
+app.include_router(ingestion.router)
+app.include_router(live.router)
 app.include_router(lectures.router)
 app.include_router(chat.router)
 app.include_router(analysis.router)

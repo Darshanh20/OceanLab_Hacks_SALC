@@ -84,6 +84,24 @@ OCEAN_LAB_HACKS/
     └── other SQL files          # Additional features
 ```
 
+### Recommended Backend Module Mapping
+
+The current backend is organized by layer (`routers/`, `services/`, `models/`, `middleware/`). The target structure should be feature-based:
+
+- `modules/auth/` → `routers/auth.py`, `services/auth_service.py`, auth schemas and utilities
+- `modules/lectures/` → `routers/lectures.py`, lecture schemas, repository access, lecture-specific orchestration
+- `modules/ingestion/` → document extraction, transcription, upload formatting, and ingestion handlers
+- `modules/rag/` → embedding generation, chunk retrieval, and answer synthesis
+- `modules/analysis/` → summaries, notes, keywords, highlights, questions, translation
+- `modules/organizations/` → workspace creation, membership, role checks
+- `modules/groups/` → team creation, membership, access rules
+- `modules/integrations/` → team suggestion logic and future calendar/extension integrations
+- `core/` → global config, database client, security helpers
+- `shared/` → reusable AI clients and utility helpers
+- `workers/` → background jobs for ingestion, summarization, embeddings, and action plan generation
+
+This is the cleanest way to align the codebase with the intended backendv1-style modular architecture without mixing unrelated logic.
+
 ---
 
 ## 💾 Database Explained
@@ -159,6 +177,28 @@ Stores: Lecture ID, Team ID
 Purpose: Allow sharing lectures with specific teams
 ```
 
+#### 10. **lecture_action_plans** - Cached action plans for a lecture
+```
+Stores:
+- Lecture ID
+- Markdown action plan
+- JSON payloads for tasks, timeline, dependencies, team breakdown, and share targets
+- Whether the plan is shared
+
+Purpose: Cache lecture-level action plans so they can be reused without regeneration
+```
+
+#### 11. **workspace_action_plans** - Cached action plans for an organization or team
+```
+Stores:
+- Organization ID
+- Optional Team ID
+- Markdown action plan
+- JSON payloads for tasks, timeline, dependencies, team breakdown, and risks
+
+Purpose: Cache workspace-scoped plans across uploads and team workflows
+```
+
 ### How Permissions Work
 
 ```
@@ -176,6 +216,10 @@ Team (Specific group):
 - User uploads to both organization + team
 - Only members of that team and workspace owner can see it
 - Like: "Google Drive > Marketing Team folder" (only team members)
+
+Shared to multiple teams:
+- A lecture can also be linked to additional teams through `lecture_team_shares`
+- This keeps the primary lecture scope intact while allowing controlled reuse across groups
 ```
 
 ---
@@ -375,6 +419,7 @@ Functions extract:
 - Action items / tasks
 - Important topics / keywords
 - Attendees / participants (from meetings)
+- Workspace and lecture action plans (cached in `lecture_action_plans` and `workspace_action_plans`)
 
 #### `supabase_client.py` - Database Connection
 ```python
@@ -398,6 +443,9 @@ add_member(group_id, user_id)     # Add person to team
 
 #### `team_suggestion_service.py` - AI Team Recommendations
 Suggests which teams might be interested in a newly uploaded lecture.
+
+#### `lecture_action_plans` and `workspace_action_plans`
+These cached tables store structured planning output so the app can reuse generated plans for lectures, teams, and workspaces without recomputing them on every request.
 
 ---
 
@@ -690,6 +738,7 @@ Group                 # Team info structure
 | `add_lecture_team_shares.sql` | Sharing table | Lets documents be shared with teams |
 | `add_transcript_json.sql` | Structured data | Adds column for detailed transcript data |
 | `update_vector_dimension.sql` | Fix vectors | Updates embedding dimension to 1024 |
+| `DATABASE_SCHEMA.md` | Schema reference | Full table-by-table schema for the current database |
 
 ---
 

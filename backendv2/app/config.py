@@ -13,6 +13,7 @@ COHERE_API_KEY: str = os.getenv("COHERE_API_KEY", "")
 JWT_SECRET: str = os.getenv("JWT_SECRET", "change-this-secret-key")
 JWT_ALGORITHM: str = "HS256"
 JWT_EXPIRATION_HOURS: int = 24
+UPLOAD_BUCKET: str = os.getenv("UPLOAD_BUCKET", "lectures")
 MAX_AUDIO_SIZE_MB: int = 25
 ALLOWED_MEDIA_TYPES: list[str] = [
     "audio/mpeg", "audio/wav", "audio/mp4", "audio/x-m4a",

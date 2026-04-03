@@ -7,6 +7,73 @@ This is a B2B Knowledge Management platform with:
 - **Content sharing**: Role-based permissions (organization-level and team-level)
 - **AI services**: RAG-based Q&A, summaries, analysis tools
 
+## Recommended Modular Structure
+
+The current codebase is still organized as routers/services/models/middleware. The target structure should be feature-first and layer-aware:
+
+### Backend target layout
+```bash
+backend/app/
+├── core/
+│   ├── config.py
+│   ├── database.py
+│   └── security.py
+├── modules/
+│   ├── auth/
+│   ├── lectures/
+│   ├── ingestion/
+│   ├── live_sessions/
+│   ├── rag/
+│   ├── analysis/
+│   ├── tasks/
+│   ├── organizations/
+│   ├── groups/
+│   └── integrations/
+├── shared/
+│   ├── ai/
+│   ├── utils/
+│   └── constants.py
+├── workers/
+└── main.py
+```
+
+### Feature module contract
+Each module should keep the same internal layers:
+- `router.py` for HTTP endpoints
+- `service.py` for business logic
+- `repository.py` for database access
+- `schema.py` for Pydantic models
+- `utils.py` or handlers for feature-specific helpers
+
+### Current file mapping
+- `routers/auth.py` + `services/auth_service.py` → `modules/auth/`
+- `routers/lectures.py` + `services/transcription_service.py` + `services/document_extraction_service.py` → `modules/lectures/` and `modules/ingestion/`
+- `routers/chat.py` + `services/rag_service.py` → `modules/rag/`
+- `routers/analysis.py` + `services/analysis_service.py` + `services/summary_service.py` → `modules/analysis/`
+- `routers/organizations.py` + `services/organization_service.py` → `modules/organizations/`
+- `routers/groups.py` + `services/group_service.py` → `modules/groups/`
+- `services/team_suggestion_service.py` → `modules/integrations/` or `modules/lectures/` depending on ownership
+- `services/supabase_client.py` + `config.py` + `middleware/auth_middleware.py` → `core/`
+
+### Frontend target layout
+```bash
+frontend/src/
+├── app/
+├── modules/
+│   ├── ingestion/
+│   ├── lectures/
+│   ├── tasks/
+│   ├── chat/
+│   └── auth/
+├── components/
+├── lib/
+├── store/
+├── styles/
+└── types/
+```
+
+This structure keeps each feature self-contained and makes it easier to add new verticals like live sessions, tasks, or calendar integrations without spreading logic across unrelated folders.
+
 ---
 
 ## 1. TRANSCRIPT HANDLING
@@ -24,10 +91,19 @@ This is a B2B Knowledge Management platform with:
 
 - `lecture_chunks` (RAG embeddings)
   - `id`, `lecture_id`, `chunk_text`
-  - `embedding` (vector(768) from Cohere or pgvector(1024))
+  - `embedding` (vector(1024) from Cohere)
 
 - `lecture_analysis` (cached analyses)
   - `lecture_id`, `analysis_type`, `content`
+
+- `lecture_team_shares` (secondary team sharing)
+  - `lecture_id`, `group_id`, `shared_at`
+
+- `lecture_action_plans` (lecture-level planning cache)
+  - `lecture_id`, `markdown_content`, `content_json`, `tasks_json`, `timeline_json`, `dependencies_json`, `team_breakdown_json`, `share_team_ids_json`, `is_shared`
+
+- `workspace_action_plans` (org/team planning cache)
+  - `org_id`, `group_id`, `markdown_content`, `content_json`, `tasks_json`, `timeline_json`, `dependencies_json`, `team_breakdown_json`, `risks_json`
 
 ### Processing Pipeline
 **File upload flow** (`routers/lectures.py` → `_upload_and_process_lecture`):
@@ -45,7 +121,7 @@ This is a B2B Knowledge Management platform with:
    - Groq API generates summary (cached in `lecture_analysis`)
 4. **RAG Processing** (status: "processing_rag")
    - Chunk transcript (~500-800 tokens, overlapping)
-   - Generate embeddings via Cohere API (embed-english-v3.0, 1024-dim vectors)
+  - Generate embeddings via Cohere API (embed-english-v3.0, 1024-dim vectors)
    - Store in `lecture_chunks` table
 5. **Complete** (status: "completed")
 
@@ -120,15 +196,17 @@ All permission checks in backend routers use:
    - Personal: `org_id=None, group_id=None` → private
    - Workspace: `org_id=<id>, group_id=None` → all org members
    - Team: `org_id=<id>, group_id=<id>` → team members only
+  - Multi-team distribution: additional teams are added to `lecture_team_shares`
 
 2. **Access endpoints** enforced:
    - `/api/lectures` - list (filtered by access)
    - `/api/lectures/{id}/chat` - Q&A (access check)
    - `/api/analysis/*` - analysis tools (access check)
 
-3. **No explicit sharing API** - instead, move content to team:
-   - Upload directly to `org_id + group_id`
-   - Or modify existing lecture (if user has permission)
+3. **Sharing is stored explicitly**:
+  - Primary scope remains on the lecture row (`org_id`, `group_id`)
+  - Additional team visibility is tracked in `lecture_team_shares`
+  - Lecture-level and workspace-level plans are cached in `lecture_action_plans` and `workspace_action_plans`
 
 ---
 
@@ -158,6 +236,10 @@ All permission checks in backend routers use:
 - Grouped by date bucket (Today, Yesterday, etc.)
 - Upload new lecture to workspace/team
 - **This is the main hub for uploading content to teams**
+
+**Team Suggestion Modal** (`frontend/src/components/TeamSuggestionModal.tsx`):
+- Suggests likely teams when a lecture is being assigned or shared
+- Uses organization and group context to help users pick the right destination
 
 **Lecture Details** (`frontend/src/app/(protected)/lecture/[id]/page.tsx`):
 - View transcript (with speaker labels, timestamps, utterances)
@@ -223,6 +305,12 @@ All permission checks in backend routers use:
   - `POST /api/export/markdown` - export to Markdown
   - `POST /api/export/txt` - export to TXT
   - `POST /api/export/json` - export to JSON
+
+### Planning Caches
+- **Lecture Action Plans**
+  - Cached lecture outputs for tasks, timeline, dependencies, and team breakdowns
+- **Workspace Action Plans**
+  - Cached org/team outputs for shared planning and coordination
 
 ### Services (Backend Logic)
 
