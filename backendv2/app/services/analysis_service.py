@@ -34,8 +34,8 @@ semaphore = asyncio.Semaphore(3)
 async def summarize_chunk(chunk: str, prompt: str):
     async with semaphore:
         return await safe_groq_call(
-            "You are a concise academic summarizer.",
-            f"{prompt}\n\nTEXT:\n{chunk}",
+            "You are a concise academic summarizer. Avoid repetition and keep only the strongest factual statements.",
+            f"{prompt}\n\nTEXT:\n{chunk}\n\nRules: keep the structure clean, avoid repeating the same point across sections, and preserve important terminology.",
             max_tokens=1024
         )
 
@@ -49,8 +49,8 @@ async def merge_summaries(partials: list[str], prompt: str) -> str:
     combined = "\n\n".join(partials)
 
     result = await safe_groq_call(
-        "You are an expert academic summarizer.",
-        f"{prompt}\n\nCONTENT:\n{combined}",
+        "You are an expert academic summarizer. Merge overlapping sections, remove duplicates, and keep the final output concise and structured.",
+        f"{prompt}\n\nCONTENT:\n{combined}\n\nRules: deduplicate ideas, keep the best phrasing, and produce a clean final summary.",
         max_tokens=2048
     )
     return result or ""
@@ -106,11 +106,11 @@ async def _call_groq(system_prompt: str, user_prompt: str, max_tokens: int = 409
 
 async def generate_summary(transcript: str, format_type: str = "detailed") -> str:
     prompts = {
-        "short": "Summarize briefly in 3-5 sentences.",
-        "bullet": "Summarize in bullet points.",
-        "detailed": "Create a structured academic summary with headings.",
-        "exam": "Create exam-focused notes.",
-        "concept": "Create a concept-based summary.",
+        "short": "Summarize in 3-5 sentences with no filler and no repetition.",
+        "bullet": "Summarize using crisp bullets grouped by theme.",
+        "detailed": "Create a structured academic summary with headings, key takeaways, and a short action-oriented closing section.",
+        "exam": "Create exam-focused notes with likely questions and high-value concepts.",
+        "concept": "Create a concept-based summary organized by major ideas and relationships.",
     }
 
     prompt = prompts.get(format_type, prompts["detailed"])
@@ -133,7 +133,7 @@ async def generate_summary(transcript: str, format_type: str = "detailed") -> st
 
 async def generate_notes(transcript: str) -> str:
     """Transform transcript into clean structured notes."""
-    system = "You are an expert note-taker creating clean, organized lecture notes from a transcript."
+    system = "You are an expert note-taker creating clean, organized lecture notes from a transcript. Do not repeat the same fact across multiple sections."
     user = f"""Transform this lecture transcript into clean, well-organized notes:
 
 Requirements:
@@ -157,7 +157,7 @@ TRANSCRIPT:
 
 async def extract_keywords(transcript: str) -> str:
     """Extract keywords, technical terms, glossary, and topic clusters."""
-    system = "You are an expert at analyzing academic content and extracting key information."
+    system = "You are an expert at analyzing academic content and extracting key information. Prefer unique terms, group related concepts, and avoid duplicates."
     user = f"""Analyze this lecture transcript and extract:
 
 ## 🔑 Important Keywords
@@ -184,7 +184,7 @@ TRANSCRIPT:
 async def generate_questions(transcript: str, qtype: str = "mixed") -> str:
     """Generate questions from lecture content."""
     prompts = {
-        "mcq": """Generate 10 Multiple Choice Questions from this lecture.
+        "mcq": """Generate 6 Multiple Choice Questions from this lecture.
 Format each as:
 ### Q1. [Question]
 - A) [Option]
@@ -193,17 +193,17 @@ Format each as:
 - D) [Option]
 **Answer: [Letter]) [Explanation]**""",
 
-        "short": """Generate 10 Short Answer Questions from this lecture.
+        "short": """Generate 6 Short Answer Questions from this lecture.
 Format each as:
 ### Q1. [Question]
 **Answer:** [2-3 sentence answer]""",
 
-        "long": """Generate 5 Long Answer Questions from this lecture.
+        "long": """Generate 3 Long Answer Questions from this lecture.
 Format each as:
 ### Q1. [Question]
 **Model Answer:** [Detailed 1-2 paragraph answer]""",
 
-        "flashcards": """Generate 15 Flashcards from this lecture.
+        "flashcards": """Generate 8 Flashcards from this lecture.
 Format each as:
 ### Card 1
 **Front:** [Question/Term]
@@ -212,23 +212,52 @@ Format each as:
 
         "mixed": """Generate a practice test from this lecture content:
 
-## Section A: Multiple Choice (5 questions)
+## Section A: Multiple Choice (4 questions)
 (format: question + 4 options + answer)
 
-## Section B: Short Answer (5 questions)
+## Section B: Short Answer (4 questions)
 (format: question + brief answer)
 
-## Section C: Long Answer (2 questions)
+## Section C: Long Answer (1 question)
 (format: question + detailed answer)
 
-## Flashcards (5 cards)
+## Flashcards (4 cards)
 (format: front/back pairs)""",
     }
 
     fmt = prompts.get(qtype, prompts["mixed"])
-    system = "You are an expert exam paper setter creating questions from lecture content. Questions should test understanding, not just memory."
-    user = f"{fmt}\n\nTRANSCRIPT:\n{transcript}"
-    return await safe_groq_call(system, user) or ""
+    system = "You are an expert exam paper setter creating questions from lecture content. Questions should test understanding, not just memory. Avoid duplicates and vary difficulty levels."
+
+    chunks = chunk_text(transcript, max_tokens=900, overlap=120)
+    if not chunks:
+        chunks = [transcript]
+
+    if len(chunks) == 1:
+        user = f"{fmt}\n\nTRANSCRIPT:\n{chunks[0]}\n\nRules: do not repeat near-identical questions; make answers concise and grounded in the transcript."
+        return await safe_groq_call(system, user, max_tokens=1024) or ""
+
+    partials: list[str] = []
+    for chunk in chunks[:3]:
+        user = f"{fmt}\n\nTRANSCRIPT EXCERPT:\n{chunk}\n\nRules: focus only on the excerpt, avoid duplicates, and keep answers concise."
+        partial = await safe_groq_call(system, user, max_tokens=768)
+        if partial:
+            partials.append(partial)
+
+    if not partials:
+        return ""
+
+    if len(partials) == 1:
+        return partials[0]
+
+    merge_system = "You consolidate question sets into one clean, non-redundant study guide."
+    merge_user = f"""Merge these question sets into a single markdown document.
+Remove duplicates, keep the best wording, and preserve the original answer style.
+
+QUESTION SETS:
+{chr(10).join(['---' for _ in partials])}
+{chr(10).join(partials)}
+"""
+    return await safe_groq_call(merge_system, merge_user, max_tokens=1536) or "\n\n".join(partials)
 
 
 # ──────────────────────────────────────
@@ -237,7 +266,7 @@ Format each as:
 
 async def segment_topics(transcript: str) -> str:
     """Automatically segment lecture into topics/chapters."""
-    system = "You are an expert at organizing academic content into logical sections."
+    system = "You are an expert at organizing academic content into logical sections. Prefer a small number of clear, non-overlapping chapters."
     user = f"""Analyze this lecture transcript and split it into logical topics/chapters:
 
 For each topic provide:
@@ -247,10 +276,11 @@ For each topic provide:
 - Point 1
 - Point 2
 **Summary:** [1-2 sentence summary of this section]
+**Why it matters:** [1 sentence]
 
 ---
 
-Make sure topics flow logically and cover the entire lecture.
+Make sure topics flow logically, cover the entire lecture, and do not overlap.
 
 TRANSCRIPT:
 {transcript}"""
@@ -263,7 +293,7 @@ TRANSCRIPT:
 
 async def detect_highlights(transcript: str) -> str:
     """Detect important statements and highlights in the transcript."""
-    system = "You are an expert at identifying critical moments and important statements in lectures."
+    system = "You are an expert at identifying critical moments and important statements in lectures. Quote the source text when possible and explain why each item matters."
     user = f"""Analyze this lecture transcript and find:
 
 ## ⚠️ Explicitly Marked Important
@@ -281,7 +311,7 @@ Notable examples or analogies used to explain concepts.
 ## ❓ Questions Asked
 Any questions posed by the speaker or students.
 
-For each item, quote the relevant text and explain why it's important.
+For each item, quote the relevant text, identify the speaker if obvious, and explain why it's important in one or two sentences.
 
 TRANSCRIPT:
 {transcript}"""
@@ -592,6 +622,7 @@ async def generate_lecture_action_plan(
     """
     system = """You are an expert PM assistant creating execution-ready action plans.
 Return valid JSON only, no prose outside JSON.
+Create grouped, realistic tasks with clear ownership, sequencing, and timelines.
 """
 
     workspace_teams = workspace_teams or []
@@ -640,6 +671,9 @@ Rules:
 - Provide at least 5 tasks.
 - Every task must include a realistic deadline in YYYY-MM-DD format.
 - Use dependencies where sequencing is needed.
+- Keep task titles short and concrete.
+- Prefer milestones that a small team can actually finish.
+- Avoid duplicate or redundant tasks.
 - If workspace teams are provided, assign every task to one of those exact team names only.
 - Do not invent generic teams like "Backend Team" unless it exactly exists in workspace teams.
 """

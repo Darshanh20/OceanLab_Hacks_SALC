@@ -39,14 +39,14 @@ async def run_rag_pipeline(lecture_id: str) -> dict:
             raise ValueError("No chunks generated from transcript")
         
         # 3. Generate embeddings
-        embeddings = await generate_embeddings([c["text"] for c in chunks])
+        embeddings = await generate_embeddings(chunks)
         
         # 4. Prepare and insert chunks
         chunk_rows = []
         for chunk, embedding in zip(chunks, embeddings):
             chunk_rows.append({
                 "lecture_id": lecture_id,
-                "chunk_text": chunk["text"],
+                "chunk_text": chunk,
                 "embedding": embedding,
             })
         

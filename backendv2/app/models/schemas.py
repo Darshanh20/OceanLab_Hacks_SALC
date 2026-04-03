@@ -65,6 +65,11 @@ class ChatResponse(BaseModel):
     sources: list[str] = []
 
 
+class ChatQueryRequest(BaseModel):
+    lecture_id: str
+    question: str
+
+
 # ── Team Sharing ──
 
 class TeamShareRequest(BaseModel):

@@ -12,6 +12,9 @@ from app.services.rag_service import process_lecture_for_rag
 from app.services.organization_service import OrganizationService
 from app.services.group_service import GroupService
 from app.services.team_suggestion_service import TeamSuggestionService
+from app.services.ai.summary_service import generate_cached_summary
+from app.services.ai.action_plan_service import generate_cached_action_plan
+from app.services.ai.insights_service import generate_cached_insights
 from app.config import MAX_AUDIO_SIZE_MB, ALLOWED_MEDIA_TYPES
 import uuid
 
@@ -503,6 +506,85 @@ async def suggest_teams_for_lecture(
             }
             for t in (eligible_teams or [])
         ],
+    }
+
+
+@router.get("/{lecture_id}/summary")
+async def get_lecture_summary(
+    lecture_id: str,
+    format_type: str = "detailed",
+    force_refresh: bool = False,
+    current_user: dict = Depends(get_current_user),
+):
+    supabase = get_supabase()
+    result = supabase.table("lectures").select("*").eq("id", lecture_id).execute()
+
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Lecture not found")
+
+    lecture = result.data[0]
+    if not await _can_access_lecture(lecture, current_user["user_id"]):
+        raise HTTPException(status_code=404, detail="Lecture not found")
+
+    summary, cached = await generate_cached_summary(lecture_id, format_type=format_type, force_refresh=force_refresh)
+    return {
+        "lecture_id": lecture_id,
+        "summary": summary,
+        "format_type": format_type,
+        "cached": cached,
+    }
+
+
+@router.get("/{lecture_id}/action-plan")
+async def get_lecture_action_plan(
+    lecture_id: str,
+    force_refresh: bool = False,
+    current_user: dict = Depends(get_current_user),
+):
+    supabase = get_supabase()
+    result = supabase.table("lectures").select("*").eq("id", lecture_id).execute()
+
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Lecture not found")
+
+    lecture = result.data[0]
+    if not await _can_access_lecture(lecture, current_user["user_id"]):
+        raise HTTPException(status_code=404, detail="Lecture not found")
+
+    row, cached = await generate_cached_action_plan(lecture_id, force_refresh=force_refresh)
+    return {
+        "lecture_id": lecture_id,
+        "content": row.get("markdown_content") or "",
+        "content_json": row.get("content_json") or {},
+        "tasks_json": row.get("tasks_json") or [],
+        "timeline_json": row.get("timeline_json") or [],
+        "dependencies_json": row.get("dependencies_json") or [],
+        "team_breakdown_json": row.get("team_breakdown_json") or {},
+        "cached": cached,
+    }
+
+
+@router.get("/{lecture_id}/insights")
+async def get_lecture_insights(
+    lecture_id: str,
+    force_refresh: bool = False,
+    current_user: dict = Depends(get_current_user),
+):
+    supabase = get_supabase()
+    result = supabase.table("lectures").select("*").eq("id", lecture_id).execute()
+
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Lecture not found")
+
+    lecture = result.data[0]
+    if not await _can_access_lecture(lecture, current_user["user_id"]):
+        raise HTTPException(status_code=404, detail="Lecture not found")
+
+    insights, cached = await generate_cached_insights(lecture_id, force_refresh=force_refresh)
+    return {
+        "lecture_id": lecture_id,
+        "insights": insights,
+        "cached": cached,
     }
 
 

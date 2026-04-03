@@ -1,5 +1,4 @@
 import axios from "axios";
-import { url } from "inspector/promises";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -89,7 +88,9 @@ export const groupsAPI = {
 
 export const chatAPI = {
     ask: (lectureId: string, question: string) =>
-        api.post(`/api/lectures/${lectureId}/chat`, { question }),
+        api.post(`/api/chat/query`, { lecture_id: lectureId, question }),
+    query: (lectureId: string, question: string) =>
+        api.post(`/api/chat/query`, { lecture_id: lectureId, question }),
 };
 
 export const analysisAPI = {

@@ -135,19 +135,25 @@ async def run_ingestion_pipeline(
 
 
 async def _trigger_downstream_pipelines(lecture_id: str, input_type: str):
-    """Trigger transcription, RAG, and analysis pipelines asynchronously."""
+    """Trigger RAG, summary, action plan, and insights pipelines asynchronously."""
     from .transcription_pipeline import run_transcription_pipeline
     from .rag_pipeline import run_rag_pipeline
-    from .analysis_pipeline import run_analysis_pipeline
+    from .summary_pipeline import run_summary_pipeline
+    from .action_plan_pipeline import run_action_plan_pipeline
+    from .insights_pipeline import run_insights_pipeline
     
     try:
         # If audio/video, transcribe first
         if input_type in ["audio", "video"]:
             await run_transcription_pipeline(lecture_id)
         
-        # Always run RAG and analysis
+        # Always run RAG and AI layer pipelines
         await run_rag_pipeline(lecture_id)
-        await run_analysis_pipeline(lecture_id)
+        await run_summary_pipeline(lecture_id)
+        await run_action_plan_pipeline(lecture_id)
+        await run_insights_pipeline(lecture_id)
+
+        update_lecture_status(lecture_id, "completed")
         
     except Exception as e:
         # Log error but don't fail the entire pipeline

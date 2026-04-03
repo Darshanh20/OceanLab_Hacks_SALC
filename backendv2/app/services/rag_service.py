@@ -1,31 +1,16 @@
 import asyncio
-import tiktoken
 import httpx
 from app.config import COHERE_API_KEY, GROQ_API_KEY
 from app.services.supabase_client import get_supabase
+from app.utils.chunking_utils import chunk_text_by_tokens
 
 COHERE_EMBED_URL = "https://api.cohere.com/v2/embed"
 COHERE_MODEL = "embed-english-v3.0"  # 1024 dimensions
 
 
-def chunk_transcript(transcript: str, max_tokens: int = 600, overlap_tokens: int = 100) -> list[str]:
-    """
-    Split transcript into overlapping chunks of ~500-800 tokens.
-    Uses tiktoken for accurate token counting.
-    """
-    encoder = tiktoken.get_encoding("cl100k_base")
-    tokens = encoder.encode(transcript)
-    chunks = []
-    start = 0
-
-    while start < len(tokens):
-        end = min(start + max_tokens, len(tokens))
-        chunk_tokens = tokens[start:end]
-        chunk_text = encoder.decode(chunk_tokens)
-        chunks.append(chunk_text.strip())
-        start += max_tokens - overlap_tokens
-
-    return chunks
+def chunk_transcript(transcript: str, max_tokens: int = 700, overlap_tokens: int = 100) -> list[str]:
+    """Split transcript into overlapping chunks using the shared utility."""
+    return chunk_text_by_tokens(transcript, max_tokens=max_tokens, overlap_tokens=overlap_tokens)
 
 
 async def _cohere_embed(texts: list[str], input_type: str = "search_document") -> list[list[float]]:
@@ -145,22 +130,23 @@ async def generate_answer(question: str, context_chunks: list[str]) -> str:
     if not GROQ_API_KEY:
         raise RuntimeError("GROQ_API_KEY is not set")
 
-    context = "\n\n---\n\n".join(context_chunks)
+    labeled_chunks = [f"[Source {index + 1}]\n{chunk}" for index, chunk in enumerate(context_chunks)]
+    context = "\n\n---\n\n".join(labeled_chunks)
 
     messages = [
         {
             "role": "system",
-            "content": """You are an expert academic assistant helping students understand lecture content. 
-Answer questions based ONLY on the provided lecture context. 
+            "content": """You are an expert academic assistant helping students understand lecture content.
+Answer questions based ONLY on the provided lecture context.
 If the answer cannot be found in the context, say so clearly.
-Provide clear, detailed, and well-structured answers.
-Use bullet points and formatting where appropriate.
+Provide a clear answer, then add a short evidence section citing the source labels you used.
 
 STRICT RULES:
 - Use proper markdown headings (#, ##, ###)
 - DO NOT use ** for headings
-- Use bullet points (-)
+- Use bullet points (-) when useful
 - Keep clean spacing
+- Reference source labels exactly as written, e.g. [Source 1]
 """,
         },
         {
@@ -172,7 +158,8 @@ LECTURE CONTEXT:
 
 QUESTION: {question}
 
-Provide a comprehensive answer based on the lecture content above.""",
+Provide a comprehensive answer based on the lecture content above.
+At the end, include a short 'Evidence' section with the most relevant source labels and what they support.""",
         },
     ]
 
@@ -214,7 +201,7 @@ async def answer_question(lecture_id: str, question: str) -> tuple[str, list[str
             transcript = result.data[0]["transcript_text"]
             try:
                 answer = await generate_answer(question, [transcript])
-                return answer, []
+                return answer, ["[Transcript] Full transcript fallback used"]
             except Exception as e:
                 return f"Sorry, I encountered an error: {str(e)}", []
         return "I couldn't find relevant information in this lecture.", []
@@ -224,4 +211,5 @@ async def answer_question(lecture_id: str, question: str) -> tuple[str, list[str
     except Exception as e:
         return f"Sorry, I encountered an error: {str(e)}", chunks
 
-    return answer, chunks
+    sources = [f"[Source {index + 1}] {chunk[:240].strip()}" for index, chunk in enumerate(chunks)]
+    return answer, sources

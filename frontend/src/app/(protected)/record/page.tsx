@@ -4,7 +4,8 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { lecturesAPI, organizationsAPI, groupsAPI } from "@/lib/api";
-import { Mic, Play, Pause, Square, RotateCcw, ArrowUpFromLine, Upload, Building2, Users } from "lucide-react";
+import { Mic, Play, Pause, Square, RotateCcw, Upload, Building2, Users } from "lucide-react";
+import { SaveToggle } from "@/components/ui/save-toggle";
 
 export default function RecordPage() {
     const router = useRouter();
@@ -256,9 +257,17 @@ export default function RecordPage() {
                     {recorded && (
                         <>
                             <button className="btn btn-secondary" onClick={startRecording}><RotateCcw size={16} /> Re-record</button>
-                            <button className="btn btn-primary btn-lg" onClick={handleUpload} disabled={uploading}>
-                                {uploading ? <><span className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> Processing...</> : <><ArrowUpFromLine size={18} /> Upload &amp; Process</>}
-                            </button>
+                            <SaveToggle
+                                type="button"
+                                loading={uploading}
+                                onClick={handleUpload}
+                                disabled={uploading}
+                                idleText="Upload & Process"
+                                savedText="Uploaded"
+                                loadingDuration={1200}
+                                successDuration={900}
+                                className="w-full"
+                            />
                         </>
                     )}
                 </div>

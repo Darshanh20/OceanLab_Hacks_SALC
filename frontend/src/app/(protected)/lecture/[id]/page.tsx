@@ -184,7 +184,7 @@ function TranslateBar({
 }) {
     if (!content) return null;
     return (
-        <div className="translate-bar">
+        <div className="translate-bar" data-lecture-id={lectureId}>
             <div className="translate-bar-inner">
                 <span style={{ fontSize: "0.78rem", color: "var(--text-muted)", fontWeight: 500, display: "inline-flex", alignItems: "center", gap: 4 }}><Globe size={13} /> Translate:</span>
                 <div className="translate-pills">
@@ -544,8 +544,14 @@ export default function LectureDetailPage() {
                 ? suggestedRes.data.suggested_teams
                 : [];
 
-            const sourceTeams = eligibleTeams.length > 0 ? eligibleTeams : fallbackSuggested;
-            const teamIds = Array.from(new Set(sourceTeams.map((t: any) => t.id).filter(Boolean)));
+            const sourceTeams: Array<{ id?: string }> = eligibleTeams.length > 0 ? eligibleTeams : fallbackSuggested;
+            const teamIds = Array.from(
+                new Set(
+                    sourceTeams
+                        .map((team) => team.id)
+                        .filter((teamId): teamId is string => Boolean(teamId)),
+                ),
+            );
 
             if (teamIds.length === 0) {
                 setShareAllError("No eligible teams found to share this item.");
@@ -808,8 +814,8 @@ export default function LectureDetailPage() {
                                                     <h4 style={{ margin: "0 0 10px", textTransform: "capitalize" }}>{p} Priority ({grouped[p].length})</h4>
                                                     {grouped[p].length === 0 ? (
                                                         <p style={{ margin: 0, color: "var(--text-muted)", fontSize: "0.85rem" }}>No tasks.</p>
-                                                    ) : grouped[p].map((t) => (
-                                                        <div key={t.id} style={{ padding: "10px", borderRadius: "8px", background: "var(--bg-surface)", marginBottom: "8px", borderLeft: `3px solid ${teamColor(t.team)}` }}>
+                                                    ) : grouped[p].map((t, idx) => (
+                                                        <div key={`${p}-${t.id || t.title || "task"}-${idx}`} style={{ padding: "10px", borderRadius: "8px", background: "var(--bg-surface)", marginBottom: "8px", borderLeft: `3px solid ${teamColor(t.team)}` }}>
                                                             <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", marginBottom: "4px" }}>
                                                                 <span style={{ fontSize: "0.72rem", fontWeight: 700, color: teamColor(t.team), background: `${teamColor(t.team)}20`, border: `1px solid ${teamColor(t.team)}55`, borderRadius: "999px", padding: "2px 8px" }}>
                                                                     TEAM: {t.team || "Unassigned"}
@@ -1191,6 +1197,18 @@ export default function LectureDetailPage() {
                                                     {msg.role === "assistant" ? (
                                                         <div className="chat-markdown">
                                                             <ReactMarkdown>{msg.content}</ReactMarkdown>
+                                                            {msg.sources && msg.sources.length > 0 && (
+                                                                <div className="chat-sources">
+                                                                    <div className="chat-sources-label">Sources</div>
+                                                                    <div className="chat-sources-list">
+                                                                        {msg.sources.map((source, index) => (
+                                                                            <span key={`${msg.id}-${index}`} className="chat-source-pill" title={source}>
+                                                                                {source}
+                                                                            </span>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     ) : (
                                                         msg.content.split("\n").map((line, j) => (

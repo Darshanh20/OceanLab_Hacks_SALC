@@ -1,69 +1,33 @@
 """
 Analysis pipeline.
 
-Generates summaries, insights, and action items.
+Compatibility orchestrator that delegates to the AI layer pipelines.
 """
 
-from app.services.db.lecture_repo import get_lecture, update_lecture_status
-from app.services.analysis_service import (
-    generate_summary,
-    extract_keywords,
-    generate_questions,
-    segment_topics,
-)
-from app.services.db.analysis_repo import save_analysis
+from app.core.pipeline.summary_pipeline import run_summary_pipeline
+from app.core.pipeline.action_plan_pipeline import run_action_plan_pipeline
+from app.core.pipeline.insights_pipeline import run_insights_pipeline
+from app.services.db.lecture_repo import update_lecture_status
 
 
 async def run_analysis_pipeline(lecture_id: str) -> dict:
     """
-    Generate AI-powered analysis.
-    
-    Steps:
-    1. Get lecture from DB
-    2. Generate summary
-    3. Extract keywords
-    4. Generate questions
-    5. Segment topics
-    6. Save all analyses
-    7. Mark complete
+    Generate AI-powered analysis by delegating to the summary,
+    action plan, and insights pipelines.
     """
     try:
-        # 1. Get lecture
-        lecture = get_lecture(lecture_id)
-        
-        if not lecture or not lecture.get("transcript_text"):
-            raise ValueError("Lecture not found or missing transcript_text")
-        
-        # 2. Generate summary
-        summary = await generate_summary(lecture["transcript_text"])
-        
-        # 3. Extract keywords
-        keywords = await extract_keywords(lecture["transcript_text"])
-        
-        # 4. Generate questions
-        questions = await generate_questions(lecture["transcript_text"])
-        
-        # 5. Segment topics
-        topics = await segment_topics(lecture["transcript_text"])
-        
-        # 6. Cache all analyses
-        analyses = [
-            {"analysis_type": "summary", "content": summary},
-            {"analysis_type": "keywords", "content": keywords},
-            {"analysis_type": "questions", "content": questions},
-            {"analysis_type": "topics", "content": topics},
-        ]
-        
-        for analysis in analyses:
-            save_analysis(lecture_id, analysis["analysis_type"], analysis["content"])
-        
-        # 7. Mark lecture as complete
+        summary_result = await run_summary_pipeline(lecture_id)
+        action_plan_result = await run_action_plan_pipeline(lecture_id)
+        insights_result = await run_insights_pipeline(lecture_id)
+
         update_lecture_status(lecture_id, "completed")
         
         return {
             "lecture_id": lecture_id,
             "status": "analysis_complete",
-            "analyses_generated": len(analyses)
+            "summary_cached": summary_result.get("cached", False),
+            "action_plan_cached": action_plan_result.get("cached", False),
+            "insights_cached": insights_result.get("cached", False),
         }
     
     except Exception as e:

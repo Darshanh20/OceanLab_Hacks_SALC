@@ -72,6 +72,14 @@ ASYNC PIPELINES (triggered in background)
 ├── rag_pipeline (embeddings)
 └── analysis_pipeline (summaries, keywords)
 
+  ↓
+
+AI LAYER (cached endpoints)
+├── chat router → question answering with pgvector retrieval
+├── summary endpoint → cached lecture summaries
+├── action-plan endpoint → structured plans in lecture_action_plans
+└── insights endpoints → keywords, topics, questions, highlights
+
         ↓
 
 OUTPUT
@@ -417,6 +425,11 @@ language = detect(text)  # → "en", "es", "fr", etc.
 - [ ] Speaker diarization improvement
 - [ ] Multi-language translation
 - [ ] Custom analysis templates
+
+### Phase 4 (AI Layer) - Already Wired
+- Chat uses `backendv2/app/routers/chat.py` + `backendv2/app/services/rag_service.py`
+- Summary, keywords, topics, questions, highlights use `backendv2/app/routers/analysis.py`
+- Action plans are cached in `lecture_action_plans` and workspace plans in `workspace_action_plans`
 
 ---
 

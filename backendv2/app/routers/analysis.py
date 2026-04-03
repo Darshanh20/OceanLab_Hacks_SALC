@@ -119,6 +119,59 @@ async def _can_access_lecture(lecture: dict, user_id: str) -> bool:
     return False
 
 
+def _fallback_questions_markdown(transcript: str, qtype: str) -> str:
+    cleaned = " ".join((transcript or "").split())
+    sentences = [
+        sentence.strip(" .;:\t\n\r")
+        for sentence in cleaned.split(".")
+        if len(sentence.strip()) > 40
+    ]
+    seeds = sentences[:4] or ([cleaned[:120]] if cleaned else [])
+
+    lines = [
+        "## Study Questions",
+        "The AI generator is temporarily unavailable, so these are lightweight review prompts based on the lecture transcript.",
+    ]
+
+    if qtype == "flashcards":
+        for index, seed in enumerate(seeds, start=1):
+            topic = seed[:70].rstrip(" ,;:")
+            lines.append(
+                f"### Card {index}\n**Front:** What is the main idea of {topic}?\n**Back:** Review the related section of the lecture for the exact explanation."
+            )
+    else:
+        for index, seed in enumerate(seeds, start=1):
+            topic = seed[:100].rstrip(" ,;:")
+            lines.append(
+                f"### Q{index}. What does the lecture say about {topic}?\n**Answer:** Review the surrounding lecture discussion for the full explanation."
+            )
+
+    return "\n\n".join(lines)
+
+
+def _fallback_highlights_markdown(transcript: str) -> str:
+    cleaned = " ".join((transcript or "").split())
+    sentences = [
+        sentence.strip(" .;:\t\n\r")
+        for sentence in cleaned.split(".")
+        if len(sentence.strip()) > 50
+    ]
+    seeds = sentences[:5] or ([cleaned[:140]] if cleaned else [])
+
+    lines = [
+        "## Smart Highlights",
+        "The AI highlight extractor is temporarily unavailable, so these are best-effort highlights based on the transcript.",
+    ]
+
+    for index, seed in enumerate(seeds, start=1):
+        highlight = seed[:130].rstrip(" ,;:")
+        lines.append(
+            f"### Highlight {index}\n- {highlight}\n- Why it matters: Review the surrounding lecture discussion for the full context."
+        )
+
+    return "\n\n".join(lines)
+
+
 async def _get_transcript(lecture_id: str, user_id: str) -> str:
     """Get transcript for a lecture, verify access."""
     supabase = get_supabase()
@@ -342,7 +395,10 @@ async def get_questions(req: AnalysisRequest, current_user: dict = Depends(get_c
         return AnalysisResponse(content=cached, analysis_type=cache_key, cached=True)
 
     transcript = await _get_transcript(req.lecture_id, current_user["user_id"])
-    content = await generate_questions(transcript, req.format_type)
+    try:
+        content = await generate_questions(transcript, req.format_type)
+    except Exception:
+        content = _fallback_questions_markdown(transcript, req.format_type)
     _save_cache(req.lecture_id, cache_key, content)
     return AnalysisResponse(content=content, analysis_type=cache_key)
 
@@ -368,7 +424,10 @@ async def get_highlights(req: AnalysisRequest, current_user: dict = Depends(get_
         return AnalysisResponse(content=cached, analysis_type="highlights", cached=True)
 
     transcript = await _get_transcript(req.lecture_id, current_user["user_id"])
-    content = await detect_highlights(transcript)
+    try:
+        content = await detect_highlights(transcript)
+    except Exception:
+        content = _fallback_highlights_markdown(transcript)
     _save_cache(req.lecture_id, "highlights", content)
     return AnalysisResponse(content=content, analysis_type="highlights")
 

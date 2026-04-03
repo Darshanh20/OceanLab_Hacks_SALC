@@ -10,9 +10,10 @@ import {
     CheckCircle2,
     FolderOpen,
     Upload,
-    ArrowUpFromLine, Building2, Users,
+    Building2, Users,
 } from "lucide-react";
 import { organizationsAPI, groupsAPI } from "@/lib/api";
+import { SaveToggle } from "@/components/ui/save-toggle";
 
 type UploadMode = "media" | "document";
 
@@ -394,31 +395,16 @@ export default function UploadPage() {
                             marginTop: "24px",
                         }}
                     >
-                        <button
+                        <SaveToggle
                             type="submit"
-                            className="btn btn-primary btn-lg"
+                            loading={uploading}
                             disabled={!file || !title.trim() || uploading}
-                            style={{ flex: 1 }}
-                        >
-                            {uploading ? (
-                                <>
-                                    <span
-                                        className="spinner"
-                                        style={{
-                                            width: 18,
-                                            height: 18,
-                                            borderWidth: 2,
-                                        }}
-                                    />{" "}
-                                    Processing...
-                                </>
-                            ) : (
-                                <>
-                                    <ArrowUpFromLine size={18} /> Upload &amp;
-                                    Process
-                                </>
-                            )}
-                        </button>
+                            idleText="Upload & Process"
+                            savedText="Uploaded"
+                            loadingDuration={1200}
+                            successDuration={900}
+                            className="w-full"
+                        />
                     </div>
                 </form>
 
