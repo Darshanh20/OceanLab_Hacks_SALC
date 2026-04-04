@@ -1294,7 +1294,7 @@ export default function LectureDetailPage() {
                             <div className="card" style={{ animation: "scaleIn 0.3s ease" }}>
                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
                                     <h3 style={{ fontSize: "1rem", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}><Layers size={16} /> Topic Segmentation</h3>
-                                    {cachedFlags["topics_default"] && <span className="badge" style={{ background: "rgba(16,185,129,0.12)", color: "var(--accent-400)", fontSize: "0.7rem" }}><Sparkles size={11} /> Cached</span>}
+                                    {cachedFlags["topics_default"]}
                                 </div>
                                 <TranslateBar lectureId={lectureId} content={analysisCache["topics_default"] || ""} translatedContent={activeTranslation ? translateCache[activeTranslation] : null} translating={translating} onTranslate={handleTranslate} onClear={() => setActiveTranslation(null)} />
                                 {renderAnalysisPanel("topics_default", "Loading...", () => { void fetchAnalysis("topics", undefined, true); })}
