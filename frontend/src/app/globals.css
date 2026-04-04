@@ -146,6 +146,10 @@ a:hover {
   background: #FF6B2B;
 }
 
+.discrete-tabs-scroll::-webkit-scrollbar {
+  display: none;
+}
+
 /* ═══ Animations ═══ */
 @keyframes fadeIn {
   from {

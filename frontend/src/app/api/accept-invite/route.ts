@@ -1,4 +1,4 @@
-import { API_URL } from "@/lib/api";
+import { BACKEND_API_URL } from "@/lib/api";
 
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
@@ -38,8 +38,8 @@ export async function GET(request: Request) {
 
     try {
         // Call backend to accept the invite
-        console.log("[FRONTEND] Calling backend at:", `${API_URL}/api/organizations/invite/accept?token=${token}`);
-        const response = await fetch(`${API_URL}/api/organizations/invite/accept?token=${token}`, {
+        console.log("[FRONTEND] Calling backend at:", `${BACKEND_API_URL}/api/organizations/invite/accept?token=${token}`);
+        const response = await fetch(`${BACKEND_API_URL}/api/organizations/invite/accept?token=${token}`, {
             method: "GET",
         });
 

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { BACKEND_API_URL } from "@/lib/api";
 
 export async function POST(request: NextRequest) {
     try {
@@ -6,14 +7,13 @@ export async function POST(request: NextRequest) {
         const token = request.cookies.get("salc_token")?.value;
 
         // Forward to Python backend
-        const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
         const headers: Record<string, string> = {};
         
         if (token) {
             headers["Authorization"] = `Bearer ${token}`;
         }
 
-        const response = await fetch(`${backendUrl}/api/process/link`, {
+        const response = await fetch(`${BACKEND_API_URL}/api/process/link`, {
             method: "POST",
             headers,
             body: formData,

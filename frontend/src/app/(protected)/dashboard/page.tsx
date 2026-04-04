@@ -87,12 +87,24 @@ export default function DashboardPage() {
     const [loading, setLoading] = useState(true);
     const [organizations, setOrganizations] = useState<WorkspaceFilter[]>([]);
     const [groups, setGroups] = useState<GroupFilter[]>([]);
-    const [selectedOrgId, setSelectedOrgId] = useState("");
+    const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
     const [selectedGroupId, setSelectedGroupId] = useState("");
     const [selectedGroupRole, setSelectedGroupRole] = useState<string | null>(null);
     const [openMenuLectureId, setOpenMenuLectureId] = useState<string | null>(null);
+    const [initialized, setInitialized] = useState(false);
 
     const orgRoleMap = new Map(organizations.map((org) => [org.id, org.my_role]));
+
+    const handleOrgChange = (value: string | null) => {
+        setSelectedOrgId(value);
+        // Team context must be reset whenever workspace changes.
+        setSelectedGroupId("");
+        setSelectedGroupRole(null);
+    };
+
+    const handleGroupChange = (value: string) => {
+        setSelectedGroupId(value);
+    };
 
     const fetchLectures = useCallback(async () => {
         try {
@@ -103,7 +115,7 @@ export default function DashboardPage() {
                 return;
             }
 
-            // "All Workspaces" should include personal space plus every workspace the user belongs to.
+            // "All Workspaces" - fetch from personal + all workspaces user belongs to
             const requests = [
                 lecturesAPI.list(undefined, undefined),
                 ...organizations.map((org) => lecturesAPI.list(org.id, undefined)),
@@ -114,12 +126,11 @@ export default function DashboardPage() {
             deduped.sort((a, b) => (new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()));
             setLectures(deduped);
         } catch {
-            /* ignore */
+            setLectures([]);
         } finally {
             setLoading(false);
         }
     }, [selectedOrgId, selectedGroupId, organizations]);
-
     useEffect(() => {
         const fetchFilters = async () => {
             try {
@@ -131,12 +142,20 @@ export default function DashboardPage() {
                 const queryGroupId = searchParams.get("groupId") || "";
                 if (queryOrgId && (queryOrgId === "personal" || orgs.some((org) => org.id === queryOrgId))) {
                     setSelectedOrgId(queryOrgId);
+                } else if (!initialized) {
+                    // Default to "All Workspaces" (null) to show all meetings immediately
+                    setSelectedOrgId(null);
                 }
                 if (queryGroupId) {
                     setSelectedGroupId(queryGroupId);
                 }
+                setInitialized(true);
             } catch {
                 console.error("Failed to fetch filters");
+                if (!initialized) {
+                    setSelectedOrgId(null);
+                    setInitialized(true);
+                }
             }
         };
         fetchFilters();
@@ -147,17 +166,27 @@ export default function DashboardPage() {
             if (selectedOrgId && selectedOrgId !== "personal") {
                 try {
                     const groupsRes = await groupsAPI.listByOrg(selectedOrgId);
-                    setGroups(groupsRes.data);
-                } catch (err) {
+                    const nextGroups = Array.isArray(groupsRes.data) ? groupsRes.data : [];
+                    setGroups(nextGroups);
+
+                    // Clear stale team selection if it does not belong to current workspace.
+                    if (selectedGroupId && !nextGroups.some((group) => group.id === selectedGroupId)) {
+                        setSelectedGroupId("");
+                        setSelectedGroupRole(null);
+                    }
+                } catch {
                     setGroups([]);
+                    setSelectedGroupId("");
+                    setSelectedGroupRole(null);
                 }
             } else {
                 setGroups([]);
                 setSelectedGroupId("");
+                setSelectedGroupRole(null);
             }
         };
         fetchGroups();
-    }, [selectedOrgId]);
+    }, [selectedOrgId, selectedGroupId]);
 
     useEffect(() => {
         const fetchSelectedGroupRole = async () => {
@@ -252,10 +281,9 @@ export default function DashboardPage() {
                             <span className="dashboard-field-label"><Building2 size={14} /> Workspace</span>
                             <select
                                 className="dashboard-select"
-                                value={selectedOrgId}
-                                onChange={(e) => setSelectedOrgId(e.target.value)}
+                                value={selectedOrgId || ""}
+                                onChange={(e) => handleOrgChange(e.target.value === "" ? null : e.target.value)}
                             >
-                                <option value="">All Workspaces</option>
                                 <option value="personal">Personal Space</option>
                                 {organizations.map((org) => (
                                     <option key={org.id} value={org.id}>{org.name}</option>
@@ -267,7 +295,7 @@ export default function DashboardPage() {
                             <select
                                 className="dashboard-select"
                                 value={selectedGroupId}
-                                onChange={(e) => setSelectedGroupId(e.target.value)}
+                                onChange={(e) => handleGroupChange(e.target.value)}
                                 disabled={!selectedOrgId || selectedOrgId === "personal"}
                             >
                                 <option value="">All Teams</option>
