@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect, type ComponentType } from "react";
 import { LayoutDashboard, Upload, Mic, BarChart3, LogOut, Menu, X, Building2, Users, Sparkles, Link2 } from "lucide-react";
 import { organizationsAPI } from "@/lib/api";
-import { AppRole, WorkspaceSummary } from "@/types";
+import { WorkspaceSummary } from "@/types";
 import LinkInput from "@/components/LinkInput";
 
 interface SidebarLink {
@@ -42,14 +42,6 @@ export default function Sidebar() {
     const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
 
     const hasWorkspace = workspaces.length > 0;
-    const hasManageRole = workspaces.some((workspace) => workspace.my_role === "owner" || workspace.my_role === "admin");
-    const primaryRole: AppRole | null = workspaces.some((workspace) => workspace.my_role === "owner")
-        ? "owner"
-        : workspaces.some((workspace) => workspace.my_role === "admin")
-            ? "admin"
-            : workspaces.some((workspace) => workspace.my_role === "member")
-                ? "member"
-                : null;
 
     useEffect(() => {
         const fetchWorkspaces = async () => {
@@ -70,6 +62,17 @@ export default function Sidebar() {
         router.push("/login");
     };
 
+    const isActiveRoute = (href: string) => {
+        if (!pathname) return false;
+        if (pathname === href) return true;
+        if (pathname.startsWith(`${href}/`)) return true;
+
+        // Treat lecture detail pages as part of the dashboard experience.
+        if (href === "/dashboard" && pathname.startsWith("/lecture/")) return true;
+
+        return false;
+    };
+
     return (
         <>
             <button className="sidebar-toggle" onClick={() => setIsOpen(!isOpen)}>
@@ -81,34 +84,14 @@ export default function Sidebar() {
             <aside className={`sidebar ${isOpen ? "open" : ""}`}>
                 <div className="sidebar-logo">SyncMind AI</div>
 
-                <div className="sidebar-context">
-                    {hasWorkspace ? (
-                        <>
-                            <div className="sidebar-context-label">Workspace Access</div>
-                            <div className="sidebar-context-value">{workspaces.length} linked</div>
-                            {primaryRole && (
-                                <span className={`sidebar-role-pill role-${primaryRole}`}>
-                                    {primaryRole.toUpperCase()}
-                                </span>
-                            )}
-                        </>
-                    ) : (
-                        <>
-                            <div className="sidebar-context-label">Workspace Access</div>
-                            <div className="sidebar-context-value">Personal mode</div>
-                        </>
-                    )}
-                </div>
-
                 <nav className="sidebar-nav">
-                    <div className="sidebar-section-title">Main</div>
                     {navLinks.filter((link) => link.isVisible({ hasWorkspace })).map((link) => {
                         const Icon = link.icon;
                         return (
                             <Link
                                 key={link.href}
                                 href={link.href}
-                                className={`sidebar-link ${pathname === link.href ? "active" : ""}`}
+                                className={`sidebar-link ${isActiveRoute(link.href) ? "active" : ""}`}
                                 onClick={() => setIsOpen(false)}
                             >
                                 <span className="sidebar-link-icon"><Icon size={18} /></span>
@@ -121,7 +104,7 @@ export default function Sidebar() {
                     <div className="sidebar-section-title">Quick Create</div>
                     <Link
                         href="/upload"
-                        className={`sidebar-link sidebar-link-subtle ${pathname === "/upload" ? "active" : ""}`}
+                        className={`sidebar-link sidebar-link-subtle ${isActiveRoute("/upload") ? "active" : ""}`}
                         onClick={() => setIsOpen(false)}
                     >
                         <span className="sidebar-link-icon"><Upload size={18} /></span>
@@ -129,18 +112,17 @@ export default function Sidebar() {
                     </Link>
                     <Link
                         href="/record"
-                        className={`sidebar-link sidebar-link-subtle ${pathname === "/record" ? "active" : ""}`}
+                        className={`sidebar-link sidebar-link-subtle ${isActiveRoute("/record") ? "active" : ""}`}
                         onClick={() => setIsOpen(false)}
                     >
                         <span className="sidebar-link-icon"><Mic size={18} /></span>
                         Record Meeting
                     </Link>
                     <button
-                        className="sidebar-link sidebar-link-subtle"
+                        className={`sidebar-link sidebar-link-subtle sidebar-link-button ${isLinkModalOpen ? "active" : ""}`}
                         onClick={() => setIsLinkModalOpen(true)}
-                        style={{ border: "none", background: "transparent", cursor: "pointer", width: "100%", textAlign: "left" }}
                     >
-                        <span className="sidebar-link-icon"><Link2 size={18} style={{ color: "#00D4FF" }} /></span>
+                        <span className="sidebar-link-icon"><Link2 size={18} /></span>
                         Add Link
                     </button>
                 </nav>
@@ -148,9 +130,6 @@ export default function Sidebar() {
                 <div className="sidebar-footer">
                     {!hasWorkspace && (
                         <div className="sidebar-footer-tip">Create a workspace to unlock Teams.</div>
-                    )}
-                    {hasWorkspace && hasManageRole && (
-                        <div className="sidebar-footer-tip sidebar-footer-tip-accent"><Sparkles size={12} /> Manage-enabled workspace access</div>
                     )}
                     {userEmail && (
                         <div className="sidebar-user" style={{ marginBottom: "12px" }}>
@@ -181,9 +160,8 @@ export default function Sidebar() {
                         </div>
                         <LinkInput
                             onSuccess={(lectureId) => {
-                                setLinkModalMessage({ type: "success", text: "Link added successfully!" });
                                 setIsLinkModalOpen(false);
-                                setTimeout(() => setLinkModalMessage(null), 3000);
+                                router.push(`/lecture/${lectureId}`);
                             }}
                             onError={(error) => {
                                 setLinkModalMessage({ type: "error", text: error });

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { lecturesAPI, organizationsAPI, groupsAPI } from "@/lib/api";
 import { Lecture } from "@/types";
-import { BookOpen, CheckCircle2, Clock, Plus, Calendar, Trash2, Upload, Mic, Building2, Users } from "lucide-react";
+import { BookOpen, Calendar, Trash2, Upload, Mic, Building2, Users, Sparkles, MessageSquare, Share2, MoreHorizontal, Zap, CircleDot, Bot, ArrowRight, Lightbulb, FileQuestion, Layers, ChevronRight } from "lucide-react";
 
 interface WorkspaceFilter {
     id: string;
@@ -56,6 +56,30 @@ function StatusBadge({ status, isDocument }: { status: string; isDocument?: bool
     );
 }
 
+function getProgressPercent(status: string) {
+    const map: Record<string, number> = {
+        uploading: 14,
+        transcribing: 42,
+        summarizing: 68,
+        processing_rag: 84,
+        completed: 100,
+        failed: 100,
+    };
+    return map[status] ?? 0;
+}
+
+function getStatusDetail(status: string) {
+    const map: Record<string, string> = {
+        uploading: "Uploading source",
+        transcribing: "Transcribing",
+        summarizing: "Generating Summary",
+        processing_rag: "Building Q&A index",
+        completed: "Summary · Notes · Q&A Ready",
+        failed: "Processing failed",
+    };
+    return map[status] || status;
+}
+
 export default function DashboardPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -66,6 +90,7 @@ export default function DashboardPage() {
     const [selectedOrgId, setSelectedOrgId] = useState("");
     const [selectedGroupId, setSelectedGroupId] = useState("");
     const [selectedGroupRole, setSelectedGroupRole] = useState<string | null>(null);
+    const [openMenuLectureId, setOpenMenuLectureId] = useState<string | null>(null);
 
     const orgRoleMap = new Map(organizations.map((org) => [org.id, org.my_role]));
 
@@ -167,10 +192,10 @@ export default function DashboardPage() {
 
     const handleDelete = async (e: React.MouseEvent, id: string) => {
         e.stopPropagation();
-        if (!confirm("Delete this knowledge item?")) return;
         try {
             await lecturesAPI.delete(id);
             setLectures((prev) => prev.filter((l) => l.id !== id));
+            setOpenMenuLectureId((prev) => (prev === id ? null : prev));
         } catch { /* ignore */ }
     };
 
@@ -192,6 +217,16 @@ export default function DashboardPage() {
 
     const completedCount = lectures.filter((l) => l.status === "completed").length;
     const processingCount = lectures.filter((l) => !["completed", "failed"].includes(l.status)).length;
+    const recentLectures = [...lectures]
+        .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+        .slice(0, 3);
+    const firstCompletedLecture = recentLectures.find((l) => l.status === "completed") || lectures.find((l) => l.status === "completed");
+    const lastUpdatedLecture = [...lectures]
+        .filter((l) => l.created_at)
+        .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0];
+    const lastActionText = lastUpdatedLecture
+        ? `Last AI action: ${lastUpdatedLecture.status === "completed" ? "Summary Ready" : getStatusDetail(lastUpdatedLecture.status)} ${new Date(lastUpdatedLecture.created_at || 0).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
+        : "Last AI action: No activity yet";
     const selectedWorkspace = organizations.find((org) => org.id === selectedOrgId);
     const uploadPath = selectedOrgId
         ? `/upload?orgId=${encodeURIComponent(selectedOrgId)}${selectedGroupId ? `&groupId=${encodeURIComponent(selectedGroupId)}` : ""}`
@@ -205,9 +240,8 @@ export default function DashboardPage() {
         <div>
             <div className="page-header">
                 <div>
-                    <h1 className="page-title">Dashboard</h1>
-                    <p className="page-subtitle">One place to ingest knowledge, monitor processing, and open team-ready outputs</p>
-                </div>
+                    <h1 className="page-title">Turn meetings into decisions, not just notes.</h1>
+                    </div>
             </div>
 
             <section className="dashboard-shell">
@@ -267,60 +301,202 @@ export default function DashboardPage() {
                 </div>
             </section>
 
-            <div className="dashboard-stats">
-                <div className="stat-card">
-                    <span className="stat-icon-wrap" style={{ background: "rgba(99,102,241,0.12)", color: "#818cf8" }}><BookOpen size={22} /></span>
-                    <div><div className="stat-value">{lectures.length}</div><div className="stat-label">Total Knowledge Items</div></div>
+            <div className="dashboard-activity-strip">
+                <div className="dashboard-activity-item">
+                    <Zap size={14} />
+                    <span>{processingCount} items processing</span>
                 </div>
-                <div className="stat-card">
-                    <span className="stat-icon-wrap" style={{ background: "rgba(16,185,129,0.12)", color: "#34d399" }}><CheckCircle2 size={22} /></span>
-                    <div><div className="stat-value">{completedCount}</div><div className="stat-label">Completed</div></div>
+                <div className="dashboard-activity-divider" />
+                <div className="dashboard-activity-item">
+                    <CircleDot size={14} />
+                    <span>{completedCount} completed today</span>
                 </div>
-                <div className="stat-card">
-                    <span className="stat-icon-wrap" style={{ background: "rgba(251,191,36,0.12)", color: "#fbbf24" }}><Clock size={22} /></span>
-                    <div><div className="stat-value">{processingCount}</div><div className="stat-label">Processing</div></div>
+                <div className="dashboard-activity-divider" />
+                <div className="dashboard-activity-item dashboard-activity-item-grow">
+                    <Bot size={14} />
+                    <span>{lastActionText}</span>
                 </div>
-                <div className="stat-card" style={{ cursor: "pointer" }} onClick={() => router.push(uploadPath)}>
-                    <span className="stat-icon-wrap" style={{ background: "rgba(168,85,247,0.12)", color: "#a855f7" }}><Plus size={22} /></span>
-                    <div><div className="stat-value" style={{ fontSize: "1rem" }}>Create</div><div className="stat-label">New Item</div></div>
-                </div>
+                <button className="dashboard-activity-view" onClick={() => router.push("/analytics")}>
+                    <span>View All</span>
+                    <ArrowRight size={14} />
+                </button>
             </div>
 
-            {lectures.length === 0 ? (
-                <div className="empty-state">
-                    <span className="empty-state-icon"><BookOpen size={48} strokeWidth={1.5} /></span>
-                    <h3>No knowledge items yet</h3>
-                    <p>Upload docs/media or record a meeting to build your internal knowledge base.</p>
-                    <div style={{ display: "flex", gap: "10px", justifyContent: "center" }}>
-                        <button className="btn btn-primary" onClick={() => router.push(uploadPath)}><Upload size={16} /> Upload</button>
-                        <button className="btn btn-secondary" onClick={() => router.push("/record")}><Mic size={16} /> Record Meeting</button>
-                    </div>
-                </div>
-            ) : (
-                <div className="lectures-grid">
-                    {lectures.map((lecture) => (
-                        <div key={lecture.id} className="lecture-card" onClick={() => router.push(`/lecture/${lecture.id}`)}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                                <div className="lecture-card-title">{lecture.title}</div>
-                                <StatusBadge status={lecture.status} isDocument={isDocumentLecture(lecture)} />
-                            </div>
-                            <div className="lecture-card-meta">
-                                <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Calendar size={13} /> {lecture.created_at ? new Date(lecture.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</span>
-                            </div>
-                            {lecture.status === "failed" && lecture.summary_text && (
-                                <div className="alert alert-error" style={{ fontSize: "0.78rem", padding: "8px 12px", marginTop: "4px" }}>
-                                    {lecture.summary_text.slice(0, 120)}...
-                                </div>
-                            )}
-                            <div className="lecture-card-actions">
-                                {canDeleteLecture(lecture) && (
-                                    <button className="btn btn-danger btn-sm" onClick={(e) => handleDelete(e, lecture.id)}><Trash2 size={14} /> Delete</button>
-                                )}
+            <div className="dashboard-content-layout">
+                <div className="dashboard-content-main">
+                    {lectures.length === 0 ? (
+                        <div className="empty-state">
+                            <span className="empty-state-icon"><BookOpen size={48} strokeWidth={1.5} /></span>
+                            <h3>No knowledge items yet</h3>
+                            <p>Upload docs/media or record a meeting to build your internal knowledge base.</p>
+                            <div style={{ display: "flex", gap: "10px", justifyContent: "center" }}>
+                                <button className="btn btn-primary" onClick={() => router.push(uploadPath)}><Upload size={16} /> Upload</button>
+                                <button className="btn btn-secondary" onClick={() => router.push("/record")}><Mic size={16} /> Record Meeting</button>
                             </div>
                         </div>
-                    ))}
+                    ) : (
+                        <div className="lectures-grid dashboard-lectures-list">
+                            {lectures.map((lecture) => (
+                                <div key={lecture.id} className="lecture-card" onClick={() => router.push(`/lecture/${lecture.id}`)}>
+                                    <div className="lecture-card-top">
+                                        <div className="lecture-card-title">{lecture.title}</div>
+                                        <div className="lecture-card-top-right">
+                                            <StatusBadge status={lecture.status} isDocument={isDocumentLecture(lecture)} />
+                                            {canDeleteLecture(lecture) && (
+                                                <>
+                                                    <button
+                                                        className="lecture-icon-btn"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setOpenMenuLectureId((prev) => (prev === lecture.id ? null : lecture.id));
+                                                        }}
+                                                        aria-label="More options"
+                                                    >
+                                                        <MoreHorizontal size={15} />
+                                                    </button>
+                                                    {openMenuLectureId === lecture.id && (
+                                                        <div className="lecture-card-menu" onClick={(e) => e.stopPropagation()}>
+                                                            <button
+                                                                className="lecture-card-menu-item danger"
+                                                                onClick={(e) => handleDelete(e, lecture.id)}
+                                                            >
+                                                                <Trash2 size={14} /> Delete
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="lecture-card-meta">
+                                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Calendar size={13} /> {lecture.created_at ? new Date(lecture.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</span>
+                                    </div>
+
+                                    <div className="lecture-status-line">
+                                        <Sparkles size={14} /> {getStatusDetail(lecture.status)}
+                                    </div>
+
+                                    {!(["completed", "failed"].includes(lecture.status)) && (
+                                        <div className="meeting-progress-card">
+                                            <div className="meeting-progress-head">
+                                                <span>{`${lecture.status === "transcribing" ? "Processing" : "Progress"}: ${getProgressPercent(lecture.status)}%`}</span>
+                                                <button
+                                                    className="meeting-progress-btn"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        router.push(`/lecture/${lecture.id}`);
+                                                    }}
+                                                >
+                                                    View Progress
+                                                </button>
+                                            </div>
+                                            <div className="meeting-progress-track">
+                                                <div className="meeting-progress-fill" style={{ width: `${getProgressPercent(lecture.status)}%` }} />
+                                            </div>
+                                            <div className="meeting-progress-steps">
+                                                <span className={getProgressPercent(lecture.status) >= 40 ? "is-done" : ""}>Transcribing</span>
+                                                <span className={getProgressPercent(lecture.status) >= 65 ? "is-done" : ""}>Generating Summary</span>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {lecture.status === "failed" && lecture.summary_text && (
+                                        <div className="alert alert-error" style={{ fontSize: "0.78rem", padding: "8px 12px", marginTop: "4px" }}>
+                                            {lecture.summary_text.slice(0, 120)}...
+                                        </div>
+                                    )}
+
+                                    <div className="lecture-card-actions">
+                                        {lecture.status === "completed" && (
+                                            <>
+                                                <button
+                                                    className="meeting-action-btn meeting-action-btn-open"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        router.push(`/lecture/${lecture.id}`);
+                                                    }}
+                                                >
+                                                    Open
+                                                </button>
+                                                <button
+                                                    className="meeting-action-btn meeting-action-btn-ask"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        router.push(`/lecture/${lecture.id}?tab=chat`);
+                                                    }}
+                                                >
+                                                    <MessageSquare size={14} /> Ask AI
+                                                </button>
+                                                <button
+                                                    className="meeting-action-btn"
+                                                    onClick={(e) => e.stopPropagation()}
+                                                >
+                                                    <Share2 size={14} /> Share
+                                                </button>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
-            )}
+
+                <aside className="dashboard-quick-menu">
+                    <div className="dashboard-quick-card">
+                        <div className="dashboard-quick-title-row">
+                            <h3 className="dashboard-quick-title">Insights</h3>
+                        </div>
+                        <div className="dashboard-quick-list">
+                            {recentLectures.length === 0 ? (
+                                <div className="dashboard-quick-empty">No insights yet. Upload or record to generate insights.</div>
+                            ) : (
+                                recentLectures.map((item) => (
+                                    <button
+                                        key={item.id}
+                                        className="dashboard-insight-item"
+                                        onClick={() => router.push(`/lecture/${item.id}`)}
+                                    >
+                                        <span className="dashboard-insight-icon"><Lightbulb size={13} /></span>
+                                        <span className="dashboard-insight-content">
+                                            <span className="dashboard-insight-title">{item.title}</span>
+                                            <span className="dashboard-insight-subtitle">{item.status === "completed" ? "Notes are ready for review" : getStatusDetail(item.status)}</span>
+                                        </span>
+                                    </button>
+                                ))
+                            )}
+                        </div>
+                        <button className="dashboard-quick-link" onClick={() => router.push("/analytics")}>
+                            View All Insights <ChevronRight size={14} />
+                        </button>
+                    </div>
+
+                    <div className="dashboard-quick-card">
+                        <h3 className="dashboard-quick-title">Quick Actions</h3>
+                        <div className="dashboard-action-list">
+                            <button
+                                className="dashboard-action-item"
+                                onClick={() => firstCompletedLecture ? router.push(`/lecture/${firstCompletedLecture.id}?tab=questions`) : router.push(uploadPath)}
+                            >
+                                <FileQuestion size={14} /> Create exam questions
+                            </button>
+                            <button
+                                className="dashboard-action-item"
+                                onClick={() => firstCompletedLecture ? router.push(`/lecture/${firstCompletedLecture.id}?tab=chat`) : router.push(uploadPath)}
+                            >
+                                <MessageSquare size={14} /> Ask AI on latest summary
+                            </button>
+                            <button
+                                className="dashboard-action-item"
+                                onClick={() => firstCompletedLecture ? router.push(`/lecture/${firstCompletedLecture.id}?tab=topics`) : router.push(uploadPath)}
+                            >
+                                <Layers size={14} /> Generate key topics
+                            </button>
+                        </div>
+                    </div>
+                </aside>
+            </div>
         </div>
     );
 }

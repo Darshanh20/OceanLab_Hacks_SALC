@@ -12,7 +12,7 @@ interface LinkInputProps {
 }
 
 type DetectedType = "youtube" | "google-drive" | "unknown" | null;
-type ProgressStep = "detecting" | "extracting" | "transcribing";
+type ProgressStep = "detecting" | "extracting";
 
 export default function LinkInput({ onSuccess, onError, orgId, groupId }: LinkInputProps) {
     const [url, setUrl] = useState("");
@@ -24,6 +24,20 @@ export default function LinkInput({ onSuccess, onError, orgId, groupId }: LinkIn
     const [success, setSuccess] = useState(false);
     const [lectureId, setLectureId] = useState<string | null>(null);
     const [statusCheck, setStatusCheck] = useState(false);
+    const [backendStatus, setBackendStatus] = useState<string>("queued");
+    const [canceling, setCanceling] = useState(false);
+
+    const stageLabel: Record<string, string> = {
+        queued: "Queued...",
+        downloading: "Downloading file...",
+        converting: "Converting audio...",
+        uploading: "Uploading...",
+        transcribing: "Transcribing...",
+        processing_rag: "Processing insights...",
+        completed: "Completed",
+        failed: "Failed",
+        cancelled: "Cancelled",
+    };
 
     // Poll for lecture status after creating it
     useEffect(() => {
@@ -35,6 +49,7 @@ export default function LinkInput({ onSuccess, onError, orgId, groupId }: LinkIn
                 if (!response.ok) return;
 
                 const data = await response.json();
+                setBackendStatus(data.status || "queued");
                 
                 if (data.status === "completed") {
                     clearInterval(pollInterval);
@@ -42,24 +57,26 @@ export default function LinkInput({ onSuccess, onError, orgId, groupId }: LinkIn
                     setUrl("");
                     setTitle("");
                     setStatusCheck(false);
+                    setCurrentStep(null);
                     setTimeout(() => {
                         onSuccess(lectureId);
                     }, 800);
+                } else if (data.status === "cancelled") {
+                    clearInterval(pollInterval);
+                    setError("Processing cancelled");
+                    setStatusCheck(false);
+                    setCurrentStep(null);
                 } else if (data.status === "failed") {
                     clearInterval(pollInterval);
                     setError(data.error_message || "Processing failed");
                     onError(data.error_message || "Processing failed");
                     setStatusCheck(false);
                     setCurrentStep(null);
-                } else if (data.status === "transcribing" && currentStep !== "transcribing") {
-                    setCurrentStep("transcribing");
-                } else if (data.status === "processing_rag" && currentStep === "transcribing") {
-                    // Still in transcribing step UI, but we know RAG is processing
                 }
             } catch (err) {
                 // Silently continue polling
             }
-        }, 1000); // Poll every 1 second
+        }, 2000); // Poll every 2 seconds
 
         return () => clearInterval(pollInterval);
     }, [statusCheck, lectureId, currentStep, onSuccess, onError]);
@@ -128,12 +145,11 @@ export default function LinkInput({ onSuccess, onError, orgId, groupId }: LinkIn
                 throw new Error(errorMessage);
             }
 
-            // Step 3: Transcribing
-            setCurrentStep("transcribing");
             const data = await response.json();
 
             // Start polling for status
             setLectureId(data.id || data.lecture_id || "");
+            setBackendStatus(data.status || "queued");
             setStatusCheck(true);
         } catch (err) {
             const errorMsg = err instanceof Error ? err.message : "Failed to process link";
@@ -142,6 +158,33 @@ export default function LinkInput({ onSuccess, onError, orgId, groupId }: LinkIn
             setCurrentStep(null);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleCancel = async () => {
+        if (!lectureId) return;
+        setCanceling(true);
+        try {
+            const token = typeof window !== "undefined" ? localStorage.getItem("salc_token") : null;
+            const response = await fetch(`${API_URL}/api/process/cancel/${lectureId}`, {
+                method: "POST",
+                headers: token ? { Authorization: `Bearer ${token}` } : {},
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.detail || "Cancel failed");
+            }
+
+            setBackendStatus("cancelled");
+            setStatusCheck(false);
+            setCurrentStep(null);
+            setError("Processing cancelled");
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : "Cancel failed";
+            setError(msg);
+        } finally {
+            setCanceling(false);
         }
     };
 
@@ -182,7 +225,7 @@ export default function LinkInput({ onSuccess, onError, orgId, groupId }: LinkIn
             </div>
 
             {/* Progress Display */}
-            {loading && (
+            {(loading || statusCheck) && (
                 <div className="link-progress-wrapper">
                     <div className="link-progress-steps">
                         <div className={`link-progress-step ${currentStep === "detecting" ? "" : "completed"}`}>
@@ -207,19 +250,12 @@ export default function LinkInput({ onSuccess, onError, orgId, groupId }: LinkIn
                                 🎵 Extracting audio...
                             </div>
                         </div>
-                        <div className={`link-progress-step ${currentStep === "transcribing" ? "" : ""}`}>
-                            <div className="link-progress-step-icon">
-                                {currentStep === "transcribing" ? (
-                                    <div style={{ animation: "spin 1s linear infinite" }}>⚙️</div>
-                                ) : (
-                                    ""
-                                )}
-                            </div>
-                            <div className="link-progress-step-text">
-                                🤖 Transcribing with AI...
-                            </div>
-                        </div>
                     </div>
+                    {statusCheck && (
+                        <div style={{ marginTop: "10px", color: "#9CA3AF", fontSize: "0.85rem" }}>
+                            {stageLabel[backendStatus] || "Processing..."}
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -256,7 +292,7 @@ export default function LinkInput({ onSuccess, onError, orgId, groupId }: LinkIn
             <div className="link-form-actions">
                 <button
                     type="submit"
-                    disabled={loading || !url.trim() || (detectedType === "unknown")}
+                    disabled={loading || statusCheck || !url.trim() || (detectedType === "unknown")}
                     className={`link-submit-btn ${success ? "success" : ""}`}
                 >
                     {success ? (
@@ -269,12 +305,33 @@ export default function LinkInput({ onSuccess, onError, orgId, groupId }: LinkIn
                             <div style={{ animation: "spin 1s linear infinite" }}>⚙️</div>
                             Processing...
                         </>
+                    ) : statusCheck ? (
+                        <>
+                            <div style={{ animation: "spin 1s linear infinite" }}>⚙️</div>
+                            {stageLabel[backendStatus] || "Processing..."}
+                        </>
                     ) : (
                         <>
                             Extract →
                         </>
                     )}
                 </button>
+                {statusCheck && lectureId && (
+                    <button
+                        type="button"
+                        onClick={handleCancel}
+                        disabled={canceling}
+                        className="link-submit-btn"
+                        style={{
+                            marginLeft: "10px",
+                            background: "rgba(239, 68, 68, 0.15)",
+                            color: "#fecaca",
+                            border: "1px solid rgba(239, 68, 68, 0.45)",
+                        }}
+                    >
+                        {canceling ? "Cancelling..." : "Cancel"}
+                    </button>
+                )}
             </div>
         </form>
     );

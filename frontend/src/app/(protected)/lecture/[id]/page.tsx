@@ -34,6 +34,18 @@ function formatTimestamp(sec: number) {
     return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+function statusToProgress(status: string): number {
+    const statusProgress: Record<string, number> = {
+        uploading: 10,
+        transcribing: 40,
+        summarizing: 70,
+        processing_rag: 90,
+        completed: 100,
+        failed: 100,
+    };
+    return statusProgress[status] ?? 0;
+}
+
 const DOCUMENT_EXTENSIONS = new Set(["pdf", "docx", "pptx"]);
 
 function getFileExtensionFromUrl(fileUrl?: string | null): string | null {
@@ -353,27 +365,51 @@ export default function LectureDetailPage() {
 
     useEffect(() => { setActiveTranslation(null); }, [activeTab, summaryFormat, questionType]);
 
-    const fetchAnalysis = async (type: string, format?: string) => {
+    const fetchAnalysis = async (type: string, format?: string, forceRefresh: boolean = false) => {
         const cacheKey = `${type}_${format || "default"}`;
-        if (analysisCache[cacheKey]) return;
+        if (analysisCache[cacheKey] && !forceRefresh) return;
         setAnalysisLoading(cacheKey);
         try {
             let res;
             switch (type) {
-                case "summary": res = await analysisAPI.summary(lectureId, format || "detailed"); break;
-                case "notes": res = await analysisAPI.notes(lectureId); break;
-                case "keywords": res = await analysisAPI.keywords(lectureId); break;
-                case "questions": res = await analysisAPI.questions(lectureId, format || "mixed"); break;
-                case "topics": res = await analysisAPI.topics(lectureId); break;
-                case "highlights": res = await analysisAPI.highlights(lectureId); break;
+                case "summary": res = await analysisAPI.summary(lectureId, format || "detailed", forceRefresh); break;
+                case "notes": res = await analysisAPI.notes(lectureId, forceRefresh); break;
+                case "keywords": res = await analysisAPI.keywords(lectureId, forceRefresh); break;
+                case "questions": res = await analysisAPI.questions(lectureId, format || "mixed", forceRefresh); break;
+                case "topics": res = await analysisAPI.topics(lectureId, forceRefresh); break;
+                case "highlights": res = await analysisAPI.highlights(lectureId, forceRefresh); break;
                 default: return;
             }
             setAnalysisCache((prev) => ({ ...prev, [cacheKey]: res.data.content }));
             if (res.data.cached) setCachedFlags((prev) => ({ ...prev, [cacheKey]: true }));
+            else if (forceRefresh) setCachedFlags((prev) => ({ ...prev, [cacheKey]: false }));
         } catch (err: unknown) {
             const axErr = err as { response?: { data?: { detail?: string } } };
             setAnalysisCache((prev) => ({ ...prev, [cacheKey]: `Error: ${axErr.response?.data?.detail || "Failed to load"}` }));
         } finally { setAnalysisLoading(null); }
+    };
+
+    const renderAnalysisPanel = (cacheKey: string, fallbackText: string, onRetry: () => void, flashcards: boolean = false) => {
+        const content = analysisCache[cacheKey] || fallbackText;
+        const loading = analysisLoading === cacheKey;
+        const isError = content.startsWith("Error:");
+
+        if (loading) return <AnalysisSkeleton />;
+
+        if (isError) {
+            return (
+                <div className="alert alert-error" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", flexWrap: "wrap" }}>
+                    <span>{content}</span>
+                    <button className="btn btn-secondary btn-sm" onClick={onRetry}>
+                        Try Again
+                    </button>
+                </div>
+            );
+        }
+
+        return flashcards
+            ? <FlashcardsRenderer content={getDisplayContent(content)} />
+            : <MarkdownRenderer content={getDisplayContent(content)} />;
     };
 
     useEffect(() => {
@@ -545,7 +581,13 @@ export default function LectureDetailPage() {
                 : [];
 
             const sourceTeams = eligibleTeams.length > 0 ? eligibleTeams : fallbackSuggested;
-            const teamIds = Array.from(new Set(sourceTeams.map((t: any) => t.id).filter(Boolean)));
+            const teamIds: string[] = Array.from(
+                new Set(
+                    sourceTeams
+                        .map((t: any) => (typeof t?.id === "string" ? t.id : ""))
+                        .filter((id: string) => id.length > 0),
+                ),
+            );
 
             if (teamIds.length === 0) {
                 setShareAllError("No eligible teams found to share this item.");
@@ -591,7 +633,7 @@ export default function LectureDetailPage() {
             {/* ── Header ── */}
             <div className="lecture-header" style={{ animation: "slideInLeft 0.4s ease" }}>
                 <div className="lecture-header-info">
-                    <button className="btn btn-ghost btn-sm" onClick={() => router.push("/dashboard")} style={{ marginBottom: "8px" }}><ArrowLeft size={14} /> Back to Dashboard</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => router.push("/dashboard")} style={{ marginBottom: "8px" }}><ArrowLeft size={14} /></button>
                     <h1 className="page-title" style={{ fontSize: "1.6rem" }}>{lecture.title}</h1>
                     <div style={{ display: "flex", alignItems: "center", gap: "12px", marginTop: "10px", flexWrap: "wrap" }}>
                         <StatusBadge status={lecture.status} isDocument={isDocumentLecture} />
@@ -683,6 +725,13 @@ export default function LectureDetailPage() {
                             </h4>
                             <p style={{ color: "var(--text-muted)", fontSize: "0.82rem", margin: 0 }}>Auto-refreshes every 5 seconds.</p>
                         </div>
+                    </div>
+                    <div style={{ marginTop: "12px", marginBottom: "8px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Processing progress</span>
+                        <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)", fontWeight: 600 }}>{statusToProgress(lecture.status)}%</span>
+                    </div>
+                    <div className="meeting-progress-track" style={{ height: "7px" }}>
+                        <div className="meeting-progress-fill" style={{ width: `${statusToProgress(lecture.status)}%` }} />
                     </div>
                     <div className="processing-stages" style={{ marginTop: "18px" }}>
                         {[
@@ -1060,9 +1109,7 @@ export default function LectureDetailPage() {
                                     return <button key={f.key} className={`sub-tab ${summaryFormat === f.key ? "active" : ""}`} onClick={() => setSummaryFormat(f.key)}><FIcon size={13} /> {f.label}</button>;
                                 })}</div>
                                 <TranslateBar lectureId={lectureId} content={analysisCache[`summary_${summaryFormat}`] || ""} translatedContent={activeTranslation ? translateCache[activeTranslation] : null} translating={translating} onTranslate={handleTranslate} onClear={() => setActiveTranslation(null)} />
-                                {analysisLoading === `summary_${summaryFormat}` ? <AnalysisSkeleton /> : (
-                                    <MarkdownRenderer content={getDisplayContent(analysisCache[`summary_${summaryFormat}`] || lecture?.summary_text || "Select a format.")} />
-                                )}
+                                {renderAnalysisPanel(`summary_${summaryFormat}`, lecture?.summary_text || "Select a format.", () => { void fetchAnalysis("summary", summaryFormat, true); })}
                             </div>
                         )}
 
@@ -1074,9 +1121,7 @@ export default function LectureDetailPage() {
                                     {cachedFlags["notes_default"] && <span className="badge" style={{ background: "rgba(16,185,129,0.12)", color: "var(--accent-400)", fontSize: "0.7rem" }}><Sparkles size={11} /> Cached</span>}
                                 </div>
                                 <TranslateBar lectureId={lectureId} content={analysisCache["notes_default"] || ""} translatedContent={activeTranslation ? translateCache[activeTranslation] : null} translating={translating} onTranslate={handleTranslate} onClear={() => setActiveTranslation(null)} />
-                                {analysisLoading === "notes_default" ? <AnalysisSkeleton /> : (
-                                    <MarkdownRenderer content={getDisplayContent(analysisCache["notes_default"] || "Loading...")} />
-                                )}
+                                {renderAnalysisPanel("notes_default", "Loading...", () => { void fetchAnalysis("notes", undefined, true); })}
                             </div>
                         )}
 
@@ -1088,9 +1133,7 @@ export default function LectureDetailPage() {
                                     {cachedFlags["keywords_default"] && <span className="badge" style={{ background: "rgba(16,185,129,0.12)", color: "var(--accent-400)", fontSize: "0.7rem" }}><Sparkles size={11} /> Cached</span>}
                                 </div>
                                 <TranslateBar lectureId={lectureId} content={analysisCache["keywords_default"] || ""} translatedContent={activeTranslation ? translateCache[activeTranslation] : null} translating={translating} onTranslate={handleTranslate} onClear={() => setActiveTranslation(null)} />
-                                {analysisLoading === "keywords_default" ? <AnalysisSkeleton /> : (
-                                    <MarkdownRenderer content={getDisplayContent(analysisCache["keywords_default"] || "Loading...")} />
-                                )}
+                                {renderAnalysisPanel("keywords_default", "Loading...", () => { void fetchAnalysis("keywords", undefined, true); })}
                             </div>
                         )}
 
@@ -1131,11 +1174,7 @@ export default function LectureDetailPage() {
                                         </div>
                                     </div>
                                     <TranslateBar lectureId={lectureId} content={analysisCache[`questions_${questionType}`] || ""} translatedContent={activeTranslation ? translateCache[activeTranslation] : null} translating={translating} onTranslate={handleTranslate} onClear={() => setActiveTranslation(null)} />
-                                    {analysisLoading === `questions_${questionType}` ? <AnalysisSkeleton /> : (
-                                        questionType === "flashcards"
-                                            ? <FlashcardsRenderer content={getDisplayContent(analysisCache[`questions_${questionType}`] || "Select a question type above.")} />
-                                            : <MarkdownRenderer content={getDisplayContent(analysisCache[`questions_${questionType}`] || "Select a question type above.")} />
-                                    )}
+                                    {renderAnalysisPanel(`questions_${questionType}`, "Select a question type above.", () => { void fetchAnalysis("questions", questionType, true); }, questionType === "flashcards")}
                                 </div>
                             </div>
                         )}
@@ -1148,9 +1187,7 @@ export default function LectureDetailPage() {
                                     {cachedFlags["topics_default"] && <span className="badge" style={{ background: "rgba(16,185,129,0.12)", color: "var(--accent-400)", fontSize: "0.7rem" }}><Sparkles size={11} /> Cached</span>}
                                 </div>
                                 <TranslateBar lectureId={lectureId} content={analysisCache["topics_default"] || ""} translatedContent={activeTranslation ? translateCache[activeTranslation] : null} translating={translating} onTranslate={handleTranslate} onClear={() => setActiveTranslation(null)} />
-                                {analysisLoading === "topics_default" ? <AnalysisSkeleton /> : (
-                                    <MarkdownRenderer content={getDisplayContent(analysisCache["topics_default"] || "Loading...")} />
-                                )}
+                                {renderAnalysisPanel("topics_default", "Loading...", () => { void fetchAnalysis("topics", undefined, true); })}
                             </div>
                         )}
 
@@ -1162,9 +1199,7 @@ export default function LectureDetailPage() {
                                     {cachedFlags["highlights_default"] && <span className="badge" style={{ background: "rgba(16,185,129,0.12)", color: "var(--accent-400)", fontSize: "0.7rem" }}><Sparkles size={11} /> Cached</span>}
                                 </div>
                                 <TranslateBar lectureId={lectureId} content={analysisCache["highlights_default"] || ""} translatedContent={activeTranslation ? translateCache[activeTranslation] : null} translating={translating} onTranslate={handleTranslate} onClear={() => setActiveTranslation(null)} />
-                                {analysisLoading === "highlights_default" ? <AnalysisSkeleton /> : (
-                                    <MarkdownRenderer content={getDisplayContent(analysisCache["highlights_default"] || "Loading...")} />
-                                )}
+                                {renderAnalysisPanel("highlights_default", "Loading...", () => { void fetchAnalysis("highlights", undefined, true); })}
                             </div>
                         )}
 

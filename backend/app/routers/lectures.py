@@ -1,18 +1,19 @@
 import asyncio
 import json
 from typing import Optional
+from urllib.parse import urlparse
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends, status, BackgroundTasks
 from app.models.schemas import LectureResponse, LectureListResponse, MessageResponse, TeamShareRequest
 from app.middleware.auth_middleware import get_current_user
 from app.services.supabase_client import get_supabase
-from app.services.transcription_service import transcribe_audio
+from app.services.transcription_service import submit_transcription_job, parse_deepgram_response, transcribe_audio
 from app.services.document_extraction_service import extract_document_text
 from app.services.analysis_service import generate_summary
 from app.services.rag_service import process_lecture_for_rag
 from app.services.organization_service import OrganizationService
 from app.services.group_service import GroupService
 from app.services.team_suggestion_service import TeamSuggestionService
-from app.config import MAX_AUDIO_SIZE_MB, ALLOWED_MEDIA_TYPES
+from app.config import MAX_AUDIO_SIZE_MB, ALLOWED_MEDIA_TYPES, DEEPGRAM_CALLBACK_URL, DEEPGRAM_WEBHOOK_TOKEN
 import uuid
 
 router = APIRouter(prefix="/api/lectures", tags=["Lectures"])
@@ -135,66 +136,142 @@ async def _upload_and_process_lecture(
         }).eq("id", lecture_id).execute()
 
 
+def _build_deepgram_callback_url(lecture_id: str) -> str:
+    base = (DEEPGRAM_CALLBACK_URL or "").strip()
+    if not base:
+        return ""
+
+    parsed = urlparse(base)
+    if parsed.hostname in {"localhost", "127.0.0.1", "::1"}:
+        logger.warning("[DEEPGRAM] Callback URL is local; falling back to synchronous transcription")
+        return ""
+
+    separator = "&" if "?" in base else "?"
+    callback = f"{base}{separator}lecture_id={lecture_id}"
+    if DEEPGRAM_WEBHOOK_TOKEN:
+        callback = f"{callback}&token={DEEPGRAM_WEBHOOK_TOKEN}"
+    return callback
+
+
+async def _continue_post_transcription(lecture_id: str, result: dict):
+    """
+    Continue pipeline after transcript is available:
+    summarizing -> processing_rag -> completed.
+    """
+    supabase = get_supabase()
+    transcript_text = (result or {}).get("transcript_text", "")
+
+    if not transcript_text:
+        raise RuntimeError("Deepgram returned empty transcript")
+
+    supabase.table("lectures").update({
+        "transcript_text": transcript_text,
+        "transcript_json": json.dumps({
+            "utterances": result.get("utterances", []),
+            "speaker_labels": result.get("speaker_labels", {}),
+            "detected_language": result.get("detected_language", "en"),
+            "duration_seconds": result.get("duration_seconds", 0),
+            "word_count": result.get("word_count", 0),
+        }),
+        "status": "summarizing",
+    }).eq("id", lecture_id).execute()
+
+    supabase.table("lectures").update({"status": "processing_rag"}).eq("id", lecture_id).execute()
+    summary_task = asyncio.create_task(generate_summary(transcript_text, "detailed"))
+
+    await process_lecture_for_rag(lecture_id, transcript_text)
+
+    summary = ""
+    try:
+        summary = await summary_task
+    except Exception:
+        summary = ""
+
+    if summary:
+        supabase.table("lectures").update({"summary_text": summary}).eq("id", lecture_id).execute()
+
+    supabase.table("lectures").update({"status": "completed"}).eq("id", lecture_id).execute()
+
+
 async def _process_lecture(lecture_id: str, audio_url: str, file_ext: str):
     """
-    Background task: transcribe audio, generate summary, create RAG index.
-    Updates lecture status through each stage.
+    Background task entrypoint.
+    - Documents: extract immediately, then continue pipeline
+    - Audio/video: submit async Deepgram job and return
     """
     supabase = get_supabase()
     is_document = (file_ext or "").lower().lstrip(".") in DOC_EXTENSIONS
 
     try:
-        # Step 1: "Transcribe" stage.
-        # - Audio/video: Deepgram diarization + timestamps
-        # - Docs: extract text (no OCR) and treat it as transcript
+        # Step 1: Transcribe stage marker
         supabase.table("lectures").update({"status": "transcribing"}).eq("id", lecture_id).execute()
+
         if is_document:
             result = await extract_document_text(audio_url, file_ext)
-            # For documents we only set `transcript_text` (no word-level timestamps)
-            supabase.table("lectures").update({
-                "transcript_text": result["transcript_text"],
-                "transcript_json": None,
-                "status": "summarizing",
-            }).eq("id", lecture_id).execute()
+            await _continue_post_transcription(
+                lecture_id,
+                {
+                    "transcript_text": result.get("transcript_text", ""),
+                    "utterances": [],
+                    "speaker_labels": {0: "Document"},
+                    "detected_language": result.get("detected_language", "en"),
+                    "duration_seconds": 0,
+                    "word_count": len((result.get("transcript_text") or "").split()),
+                },
+            )
         else:
+            callback_url = _build_deepgram_callback_url(lecture_id)
+            if callback_url:
+                try:
+                    await submit_transcription_job(audio_url, callback_url)
+                    # Async Deepgram callback will continue pipeline.
+                    return
+                except Exception as callback_error:
+                    logger.warning(f"[DEEPGRAM] Async callback submit failed, falling back to synchronous transcription: {callback_error}")
+
+            # Fallback for local dev or invalid callback URLs.
             result = await transcribe_audio(audio_url)
-
-            # Store transcript text + structured data (speakers, timestamps)
-            supabase.table("lectures").update({
-                "transcript_text": result["transcript_text"],
-                "transcript_json": json.dumps({
-                    "utterances": result["utterances"],
-                    "speaker_labels": result["speaker_labels"],
-                    "detected_language": result["detected_language"],
-                    "duration_seconds": result["duration_seconds"],
-                    "word_count": result["word_count"],
-                }),
-                "status": "summarizing",
-            }).eq("id", lecture_id).execute()
-
-        # Step 2: Start summary generation in parallel (non-blocking vs RAG)
-        supabase.table("lectures").update({"status": "processing_rag"}).eq("id", lecture_id).execute()
-        summary_task = asyncio.create_task(generate_summary(result["transcript_text"], "detailed"))
-
-        # Step 3: RAG processing
-        await process_lecture_for_rag(lecture_id, result["transcript_text"])
-
-        # Step 4: Persist summary when ready (does not delay transcript availability)
-        summary = ""
-        try:
-            summary = await summary_task
-        except Exception:
-            summary = ""
-        if summary:
-            supabase.table("lectures").update({"summary_text": summary}).eq("id", lecture_id).execute()
-
-        supabase.table("lectures").update({"status": "completed"}).eq("id", lecture_id).execute()
+            await _continue_post_transcription(lecture_id, result)
 
     except Exception as e:
         supabase.table("lectures").update({
             "status": "failed",
             "summary_text": f"Processing failed: {str(e)}",
         }).eq("id", lecture_id).execute()
+
+
+@router.post("/deepgram/webhook")
+async def deepgram_webhook(
+    payload: dict,
+    lecture_id: str,
+    token: Optional[str] = None,
+):
+    """
+    Deepgram callback endpoint for async prerecorded URL transcription.
+    Continues summarization and RAG after transcript is ready.
+    """
+    if DEEPGRAM_WEBHOOK_TOKEN and token != DEEPGRAM_WEBHOOK_TOKEN:
+        raise HTTPException(status_code=401, detail="Invalid webhook token")
+
+    supabase = get_supabase()
+    lecture_result = supabase.table("lectures").select("id, status").eq("id", lecture_id).execute()
+    if not lecture_result.data:
+        raise HTTPException(status_code=404, detail="Lecture not found")
+
+    # Ignore duplicate callbacks after completion.
+    if lecture_result.data[0].get("status") == "completed":
+        return {"ok": True, "message": "Already completed"}
+
+    try:
+        parsed = parse_deepgram_response(payload or {})
+        await _continue_post_transcription(lecture_id, parsed)
+        return {"ok": True}
+    except Exception as e:
+        supabase.table("lectures").update({
+            "status": "failed",
+            "summary_text": f"Deepgram callback failed: {str(e)}",
+        }).eq("id", lecture_id).execute()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/upload", response_model=LectureResponse)

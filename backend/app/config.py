@@ -13,6 +13,8 @@ COHERE_API_KEY: str = os.getenv("COHERE_API_KEY", "")
 JWT_SECRET: str = os.getenv("JWT_SECRET", "change-this-secret-key")
 JWT_ALGORITHM: str = "HS256"
 JWT_EXPIRATION_HOURS: int = 24
+DEEPGRAM_CALLBACK_URL: str = os.getenv("DEEPGRAM_CALLBACK_URL", "")
+DEEPGRAM_WEBHOOK_TOKEN: str = os.getenv("DEEPGRAM_WEBHOOK_TOKEN", "")
 MAX_AUDIO_SIZE_MB: int = 25
 ALLOWED_MEDIA_TYPES: list[str] = [
     "audio/mpeg", "audio/wav", "audio/mp4", "audio/x-m4a",

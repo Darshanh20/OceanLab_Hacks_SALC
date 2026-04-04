@@ -17,6 +17,11 @@ from app.services.analysis_service import (
     build_action_plan_sections,
     aggregate_workspace_action_plan,
 )
+from app.services.cache_service import (
+    ANALYSIS_TYPES,
+    get_cached_analysis,
+    get_or_generate_analysis,
+)
 
 router = APIRouter(prefix="/api/analysis", tags=["Analysis"])
 
@@ -24,6 +29,8 @@ router = APIRouter(prefix="/api/analysis", tags=["Analysis"])
 class AnalysisRequest(BaseModel):
     lecture_id: str
     format_type: str = "detailed"
+    mode: str = "fast"
+    refresh: bool = False
 
 
 class TranslateRequest(BaseModel):
@@ -164,34 +171,6 @@ async def _get_lecture_for_access(lecture_id: str, user_id: str) -> dict:
     return lecture
 
 
-def _get_cached(lecture_id: str, analysis_type: str) -> Optional[str]:
-    """Check if analysis is already cached in the database."""
-    supabase = get_supabase()
-    result = (
-        supabase.table("lecture_analysis")
-        .select("content")
-        .eq("lecture_id", lecture_id)
-        .eq("analysis_type", analysis_type)
-        .execute()
-    )
-    if result.data:
-        return result.data[0]["content"]
-    return None
-
-
-def _save_cache(lecture_id: str, analysis_type: str, content: str):
-    """Save analysis result to database cache."""
-    supabase = get_supabase()
-    try:
-        supabase.table("lecture_analysis").upsert({
-            "lecture_id": lecture_id,
-            "analysis_type": analysis_type,
-            "content": content,
-        }, on_conflict="lecture_id,analysis_type").execute()
-    except Exception:
-        pass  # Non-critical, silently fail
-
-
 def _get_cached_action_plan(lecture_id: str) -> Optional[dict]:
     supabase = get_supabase()
     result = (
@@ -253,8 +232,17 @@ async def _ensure_action_plan(lecture_id: str, user_id: str, force_refresh: bool
     if not transcript:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Transcript not yet available.")
 
-    summary = lecture.get("summary_text") or _get_cached(lecture_id, "summary_detailed") or ""
-    highlights = _get_cached(lecture_id, "highlights") or ""
+    supabase = get_supabase()
+    summary = lecture.get("summary_text") or ""
+    if not summary:
+        summary = (
+            await get_cached_analysis(supabase, lecture_id, ANALYSIS_TYPES["summary"]) or
+            await get_cached_analysis(supabase, lecture_id, f"{ANALYSIS_TYPES['summary']}_detailed_fast") or
+            await get_cached_analysis(supabase, lecture_id, f"{ANALYSIS_TYPES['summary']}_detailed_deep") or
+            await get_cached_analysis(supabase, lecture_id, "summary_detailed") or
+            ""
+        )
+    highlights = await get_cached_analysis(supabase, lecture_id, ANALYSIS_TYPES["highlights"]) or ""
 
     workspace_teams = []
     org_id = lecture.get("org_id")
@@ -296,81 +284,139 @@ async def _ensure_action_plan(lecture_id: str, user_id: str, force_refresh: bool
 @router.post("/summary", response_model=AnalysisResponse)
 async def get_summary(req: AnalysisRequest, current_user: dict = Depends(get_current_user)):
     """Generate summary in specified format (cached)."""
-    cache_key = f"summary_{req.format_type}"
-    cached = _get_cached(req.lecture_id, cache_key)
+    supabase = get_supabase()
+    lecture_id = req.lecture_id
+    format_type = req.format_type.strip().lower()
+    mode = "fast" if req.mode.strip().lower() == "fast" else "deep"
+    cache_key = f"{ANALYSIS_TYPES['summary']}_{format_type}_{mode}"
+    cached = None if req.refresh else await get_cached_analysis(supabase, lecture_id, cache_key)
     if cached:
         return AnalysisResponse(content=cached, analysis_type=cache_key, cached=True)
 
-    transcript = await _get_transcript(req.lecture_id, current_user["user_id"])
-    content = await generate_summary(transcript, req.format_type)
-    _save_cache(req.lecture_id, cache_key, content)
+    transcript = await _get_transcript(lecture_id, current_user["user_id"])
+    content = await get_or_generate_analysis(
+        supabase,
+        lecture_id,
+        cache_key,
+        generate_summary,
+        transcript,
+        format_type,
+        mode == "fast",
+        refresh=req.refresh,
+    )
     return AnalysisResponse(content=content, analysis_type=cache_key)
 
 
 @router.post("/notes", response_model=AnalysisResponse)
 async def get_notes(req: AnalysisRequest, current_user: dict = Depends(get_current_user)):
     """Generate structured auto-notes (cached)."""
-    cached = _get_cached(req.lecture_id, "notes")
+    supabase = get_supabase()
+    lecture_id = req.lecture_id
+    analysis_type = ANALYSIS_TYPES["notes"]
+    cached = None if req.refresh else await get_cached_analysis(supabase, lecture_id, analysis_type)
     if cached:
-        return AnalysisResponse(content=cached, analysis_type="notes", cached=True)
+        return AnalysisResponse(content=cached, analysis_type=analysis_type, cached=True)
 
-    transcript = await _get_transcript(req.lecture_id, current_user["user_id"])
-    content = await generate_notes(transcript)
-    _save_cache(req.lecture_id, "notes", content)
-    return AnalysisResponse(content=content, analysis_type="notes")
+    transcript = await _get_transcript(lecture_id, current_user["user_id"])
+    content = await get_or_generate_analysis(
+        supabase,
+        lecture_id,
+        analysis_type,
+        generate_notes,
+        transcript,
+        refresh=req.refresh,
+    )
+    return AnalysisResponse(content=content, analysis_type=analysis_type)
 
 
 @router.post("/keywords", response_model=AnalysisResponse)
 async def get_keywords(req: AnalysisRequest, current_user: dict = Depends(get_current_user)):
     """Extract keywords, technical terms, glossary (cached)."""
-    cached = _get_cached(req.lecture_id, "keywords")
+    supabase = get_supabase()
+    lecture_id = req.lecture_id
+    analysis_type = ANALYSIS_TYPES["keywords"]
+    cached = None if req.refresh else await get_cached_analysis(supabase, lecture_id, analysis_type)
     if cached:
-        return AnalysisResponse(content=cached, analysis_type="keywords", cached=True)
+        return AnalysisResponse(content=cached, analysis_type=analysis_type, cached=True)
 
-    transcript = await _get_transcript(req.lecture_id, current_user["user_id"])
-    content = await extract_keywords(transcript)
-    _save_cache(req.lecture_id, "keywords", content)
-    return AnalysisResponse(content=content, analysis_type="keywords")
+    transcript = await _get_transcript(lecture_id, current_user["user_id"])
+    content = await get_or_generate_analysis(
+        supabase,
+        lecture_id,
+        analysis_type,
+        extract_keywords,
+        transcript,
+        refresh=req.refresh,
+    )
+    return AnalysisResponse(content=content, analysis_type=analysis_type)
 
 
 @router.post("/questions", response_model=AnalysisResponse)
 async def get_questions(req: AnalysisRequest, current_user: dict = Depends(get_current_user)):
     """Generate questions (cached per type)."""
-    cache_key = f"questions_{req.format_type}"
-    cached = _get_cached(req.lecture_id, cache_key)
+    supabase = get_supabase()
+    lecture_id = req.lecture_id
+    format_type = req.format_type.strip().lower()
+    cache_key = f"{ANALYSIS_TYPES['questions']}_{format_type}"
+    cached = None if req.refresh else await get_cached_analysis(supabase, lecture_id, cache_key)
     if cached:
         return AnalysisResponse(content=cached, analysis_type=cache_key, cached=True)
 
-    transcript = await _get_transcript(req.lecture_id, current_user["user_id"])
-    content = await generate_questions(transcript, req.format_type)
-    _save_cache(req.lecture_id, cache_key, content)
+    transcript = await _get_transcript(lecture_id, current_user["user_id"])
+    content = await get_or_generate_analysis(
+        supabase,
+        lecture_id,
+        cache_key,
+        generate_questions,
+        transcript,
+        format_type,
+        refresh=req.refresh,
+    )
     return AnalysisResponse(content=content, analysis_type=cache_key)
 
 
 @router.post("/topics", response_model=AnalysisResponse)
 async def get_topics(req: AnalysisRequest, current_user: dict = Depends(get_current_user)):
     """Segment lecture into topics/chapters (cached)."""
-    cached = _get_cached(req.lecture_id, "topics")
+    supabase = get_supabase()
+    lecture_id = req.lecture_id
+    analysis_type = ANALYSIS_TYPES["topics"]
+    cached = None if req.refresh else await get_cached_analysis(supabase, lecture_id, analysis_type)
     if cached:
-        return AnalysisResponse(content=cached, analysis_type="topics", cached=True)
+        return AnalysisResponse(content=cached, analysis_type=analysis_type, cached=True)
 
-    transcript = await _get_transcript(req.lecture_id, current_user["user_id"])
-    content = await segment_topics(transcript)
-    _save_cache(req.lecture_id, "topics", content)
-    return AnalysisResponse(content=content, analysis_type="topics")
+    transcript = await _get_transcript(lecture_id, current_user["user_id"])
+    content = await get_or_generate_analysis(
+        supabase,
+        lecture_id,
+        analysis_type,
+        segment_topics,
+        transcript,
+        refresh=req.refresh,
+    )
+    return AnalysisResponse(content=content, analysis_type=analysis_type)
 
 
 @router.post("/highlights", response_model=AnalysisResponse)
 async def get_highlights(req: AnalysisRequest, current_user: dict = Depends(get_current_user)):
     """Detect important highlights (cached)."""
-    cached = _get_cached(req.lecture_id, "highlights")
+    supabase = get_supabase()
+    lecture_id = req.lecture_id
+    analysis_type = ANALYSIS_TYPES["highlights"]
+    cached = None if req.refresh else await get_cached_analysis(supabase, lecture_id, analysis_type)
     if cached:
-        return AnalysisResponse(content=cached, analysis_type="highlights", cached=True)
+        return AnalysisResponse(content=cached, analysis_type=analysis_type, cached=True)
 
-    transcript = await _get_transcript(req.lecture_id, current_user["user_id"])
-    content = await detect_highlights(transcript)
-    _save_cache(req.lecture_id, "highlights", content)
-    return AnalysisResponse(content=content, analysis_type="highlights")
+    transcript = await _get_transcript(lecture_id, current_user["user_id"])
+    content = await get_or_generate_analysis(
+        supabase,
+        lecture_id,
+        analysis_type,
+        detect_highlights,
+        transcript,
+        refresh=req.refresh,
+    )
+    return AnalysisResponse(content=content, analysis_type=analysis_type)
 
 
 @router.post("/translate", response_model=AnalysisResponse)
@@ -398,15 +444,19 @@ async def translate(req: TranslateRequest, current_user: dict = Depends(get_curr
     cache_key = f"translate_{req.target_language}_{content_hash}"
 
     # Check DB cache
-    cached = _get_cached(req.lecture_id, cache_key)
+    cached = await get_cached_analysis(supabase, req.lecture_id, cache_key)
     if cached:
         return AnalysisResponse(content=cached, analysis_type=cache_key, cached=True)
 
-    # Generate translation
-    content = await translate_content(req.content, req.target_language)
-
-    # Save to DB
-    _save_cache(req.lecture_id, cache_key, content)
+    # Generate translation via cache wrapper
+    content = await get_or_generate_analysis(
+        supabase,
+        req.lecture_id,
+        cache_key,
+        translate_content,
+        req.content,
+        req.target_language,
+    )
 
     return AnalysisResponse(content=content, analysis_type=cache_key)
 

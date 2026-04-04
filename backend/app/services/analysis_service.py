@@ -84,7 +84,7 @@ async def summarize_chunk(chunk: str, prompt: str) -> str:
         return (await safe_groq_call(
             "You are an expert educator. Create a structured, detailed summary with headings, key concepts, examples, and definitions. Do not omit important details.",
             f"{prompt}\n\nTEXT:\n{chunk}",
-            max_tokens=800
+            max_tokens=500
         )) or ""
 
 
@@ -96,12 +96,12 @@ async def summarize_chunks(chunks: list[str], prompt: str) -> list[str]:
 
 async def merge_summaries(partials: list[str], prompt: str) -> str:
     combined = "\n\n".join(partials)
-    combined = combined[:15000]
+    combined = combined[:8000]
 
     result = await safe_groq_call(
         "You are an expert academic summarizer.",
         f"{prompt}\n\nCONTENT:\n{combined}",
-        max_tokens=800
+        max_tokens=500
     )
     return result or ""
 
@@ -119,11 +119,11 @@ async def hierarchical_merge(partials: list[str], prompt: str) -> str:
         next_level: list[str] = []
         for i in range(0, len(level), 3):
             group = level[i:i + 4]
-            combined = "\n\n".join(group)[:15000]
+            combined = "\n\n".join(group)[:8000]
             merged = await safe_groq_call(
                 "You are an expert educator. Merge these partial summaries into one cohesive, detailed, structured summary with headings and no information loss.",
                 f"{prompt}\n\nCONTENT:\n{combined}",
-                max_tokens=800,
+                max_tokens=500,
             )
             if merged:
                 next_level.append(merged)
@@ -144,7 +144,8 @@ async def safe_groq_call(system, user, max_tokens=2048, retries=5) -> str:
     for attempt in range(retries):
         try:
             tokens_needed = estimate_tokens(f"{system}\n{user}") + max_tokens
-            await token_manager.wait_for_tokens(tokens_needed)
+            if tokens_needed > 4000:
+                await token_manager.wait_for_tokens(tokens_needed)
             return await _call_groq(system, user, max_tokens)
         except Exception as e:
             err = str(e).lower()
@@ -193,7 +194,7 @@ async def _call_groq(system_prompt: str, user_prompt: str, max_tokens: int = 409
 # 1. MULTIPLE SUMMARY FORMATS
 # ──────────────────────────────────────
 
-async def generate_summary(transcript: str, format_type: str = "detailed") -> str:
+async def generate_summary(transcript: str, format_type: str = "detailed", fast_mode: bool | None = None) -> str:
     prompts = {
         "short": "Summarize briefly in 3-5 sentences.",
         "bullet": "Summarize in bullet points.",
@@ -206,17 +207,23 @@ async def generate_summary(transcript: str, format_type: str = "detailed") -> st
 
     # Preprocess transcript and apply a soft cap only for very large inputs.
     transcript = clean_text(transcript)
+    effective_fast_mode = FAST_MODE if fast_mode is None else fast_mode
     if len(transcript) > MAX_TRANSCRIPT_CHARS:
         transcript = transcript[:MAX_TRANSCRIPT_CHARS]
     if not transcript:
         return ""
 
+    if effective_fast_mode:
+        return await safe_groq_call(
+            "You are an expert educator. Create a clear structured summary with headings and key points.",
+            f"{prompt}\n\nTRANSCRIPT:\n{transcript[:8000]}",
+            max_tokens=600
+        )
+
     # STEP 1: chunk
-    max_chunk_tokens = adaptive_chunk_size(len(transcript))
-    if FAST_MODE:
-        max_chunk_tokens = min(max_chunk_tokens, 600)
+    max_chunk_tokens = min(adaptive_chunk_size(len(transcript)), 600)
     chunks = chunk_text(transcript, max_tokens=max_chunk_tokens, overlap=100)
-    chunks = chunks[:8]
+    chunks = chunks[:4]
 
     # STEP 2: controlled parallel summaries (bounded by semaphore)
     partials = await summarize_chunks(chunks, prompt)

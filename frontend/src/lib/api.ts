@@ -93,24 +93,26 @@ export const chatAPI = {
 };
 
 export const analysisAPI = {
-    summary: (lectureId: string, formatType: string = "detailed") =>
+    summary: (lectureId: string, formatType: string = "detailed", refresh: boolean = false) =>
         api.post("/api/analysis/summary", {
             lecture_id: lectureId,
             format_type: formatType,
+            refresh,
         }),
-    notes: (lectureId: string) =>
-        api.post("/api/analysis/notes", { lecture_id: lectureId }),
-    keywords: (lectureId: string) =>
-        api.post("/api/analysis/keywords", { lecture_id: lectureId }),
-    questions: (lectureId: string, formatType: string = "mixed") =>
+    notes: (lectureId: string, refresh: boolean = false) =>
+        api.post("/api/analysis/notes", { lecture_id: lectureId, refresh }),
+    keywords: (lectureId: string, refresh: boolean = false) =>
+        api.post("/api/analysis/keywords", { lecture_id: lectureId, refresh }),
+    questions: (lectureId: string, formatType: string = "mixed", refresh: boolean = false) =>
         api.post("/api/analysis/questions", {
             lecture_id: lectureId,
             format_type: formatType,
+            refresh,
         }),
-    topics: (lectureId: string) =>
-        api.post("/api/analysis/topics", { lecture_id: lectureId }),
-    highlights: (lectureId: string) =>
-        api.post("/api/analysis/highlights", { lecture_id: lectureId }),
+    topics: (lectureId: string, refresh: boolean = false) =>
+        api.post("/api/analysis/topics", { lecture_id: lectureId, refresh }),
+    highlights: (lectureId: string, refresh: boolean = false) =>
+        api.post("/api/analysis/highlights", { lecture_id: lectureId, refresh }),
     translate: (lectureId: string, content: string, targetLanguage: string) =>
         api.post("/api/analysis/translate", {
             lecture_id: lectureId,
