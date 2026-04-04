@@ -1,11 +1,9 @@
 {
-  "projects": [
+  "version": 2,
+  "rewrites": [
     {
-      "name": "ocean-lab-frontend",
-      "rootDirectory": "frontend/",
-      "buildCommand": "npm run build",
-      "framework": "nextjs",
-      "outputDirectory": ".next"
+      "source": "/api/:path*",
+      "destination": "https://oceanlab-hacks-salc.onrender.com/:path*"
     }
   ]
 }
