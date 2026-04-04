@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useSession, signIn } from "next-auth/react";
 import { lecturesAPI, analysisAPI, chatAPI, exportAPI } from "@/lib/api";
 import { Lecture, TranscriptData, ChatMessage, ActionTask, ActionPlanJson, ActionPlanSectionResponse } from "@/types";
 import TeamSuggestionModal from "@/components/TeamSuggestionModal";
@@ -219,6 +220,7 @@ const TABS = [
     { key: "questions", label: "Q&A Gen", icon: HelpCircle },
     { key: "topics", label: "Topics", icon: Layers },
     { key: "highlights", label: "Highlights", icon: Zap },
+    { key: "important_dates", label: "Important Dates", icon: Calendar },
     { key: "chat", label: "Ask AI", icon: MessageSquare },
 ];
 
@@ -251,13 +253,22 @@ export default function LectureDetailPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const lectureId = params.id as string;
+    const { data: session } = useSession();
 
     const [lecture, setLecture] = useState<Lecture | null>(null);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState("transcript");
     const [error, setError] = useState("");
+    
+    const [calendarStatus, setCalendarStatus] = useState<'idle' | 'connecting' | 'adding' | 'success' | 'error'>('idle');
+    const [calendarAddedCount, setCalendarAddedCount] = useState(0);
 
-    const [analysisCache, setAnalysisCache] = useState<Record<string, string>>({});
+    const [importantDates, setImportantDates] = useState<Array<{ title: string; date: string; time: string | null; description: string }>>([]);
+    const [datesLoading, setDatesLoading] = useState(false);
+    const [datesError, setDatesError] = useState("");
+    const [datesCached, setDatesCached] = useState(false);
+
+    const [analysisCache, setAnalysisCache] = useState<Record<string, string>>({})
     const [analysisLoading, setAnalysisLoading] = useState<string | null>(null);
     const [summaryFormat, setSummaryFormat] = useState("detailed");
     const [questionType, setQuestionType] = useState("mixed");
@@ -376,9 +387,24 @@ export default function LectureDetailPage() {
         } finally { setAnalysisLoading(null); }
     };
 
+    const fetchImportantDates = async () => {
+        if (importantDates.length > 0 || datesLoading) return;
+        setDatesLoading(true);
+        setDatesError("");
+        try {
+            const res = await analysisAPI.dates(lectureId);
+            setImportantDates(res.data.dates || []);
+            if (res.data.cached) setDatesCached(true);
+        } catch (err: unknown) {
+            setDatesError("Failed to extract important dates");
+            setImportantDates([]);
+        } finally { setDatesLoading(false); }
+    };
+
     useEffect(() => {
         if (!lecture?.transcript_text) return;
         if (activeTab === "action_plan") return;
+        if (activeTab === "important_dates") { void fetchImportantDates(); return; }
         if (activeTab === "summary") fetchAnalysis("summary", summaryFormat);
         if (activeTab === "notes") fetchAnalysis("notes");
         if (activeTab === "keywords") fetchAnalysis("keywords");
@@ -387,6 +413,12 @@ export default function LectureDetailPage() {
         if (activeTab === "highlights") fetchAnalysis("highlights");
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeTab, summaryFormat, questionType, lecture?.transcript_text]);
+
+    useEffect(() => {
+        if (!lecture?.transcript_text) return;
+        void fetchImportantDates();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [lectureId]);
 
     const deriveActionPlanSections = useCallback((planJson: ActionPlanJson, markdown: string): Record<string, ActionPlanSectionResponse> => {
         const tasks = Array.isArray(planJson?.tasks) ? planJson.tasks : [];
@@ -526,6 +558,51 @@ export default function LectureDetailPage() {
             URL.revokeObjectURL(url);
         } catch { /* ignore */ }
         finally { setExportLoading(null); }
+    };
+
+    const handleAddToCalendar = async () => {
+        if (!session?.accessToken) {
+            setCalendarStatus('connecting');
+            await signIn('google');
+            return;
+        }
+        await addToCalendar();
+    };
+
+    useEffect(() => {
+        if (session?.accessToken && calendarStatus === 'connecting') {
+            void addToCalendar();
+        }
+    }, [session, calendarStatus]);
+
+    const addToCalendar = async () => {
+        setCalendarStatus('adding');
+        try {
+            const eventsToAdd = importantDates.map(d => ({
+                title: d.title,
+                date: d.date,
+                time: d.time,
+                description: d.description,
+            }));
+
+            const res = await fetch('/api/add-to-calendar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    events: eventsToAdd,
+                    accessToken: session?.accessToken,
+                }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                setCalendarStatus('success');
+                setCalendarAddedCount(data.added);
+            } else {
+                setCalendarStatus('error');
+            }
+        } catch {
+            setCalendarStatus('error');
+        }
     };
 
     const handleShareAllTeams = async () => {
@@ -1164,6 +1241,74 @@ export default function LectureDetailPage() {
                                 <TranslateBar lectureId={lectureId} content={analysisCache["highlights_default"] || ""} translatedContent={activeTranslation ? translateCache[activeTranslation] : null} translating={translating} onTranslate={handleTranslate} onClear={() => setActiveTranslation(null)} />
                                 {analysisLoading === "highlights_default" ? <AnalysisSkeleton /> : (
                                     <MarkdownRenderer content={getDisplayContent(analysisCache["highlights_default"] || "Loading...")} />
+                                )}
+                            </div>
+                        )}
+
+                        {/* IMPORTANT DATES */}
+                        {activeTab === "important_dates" && (
+                            <div className="card" style={{ animation: "scaleIn 0.3s ease" }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                                    <h3 style={{ fontSize: "1rem", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}><Calendar size={16} /> Important Dates</h3>
+                                    {datesCached && <span className="badge" style={{ background: "rgba(16,185,129,0.12)", color: "var(--accent-400)", fontSize: "0.7rem" }}><Sparkles size={11} /> Cached</span>}
+                                </div>
+
+                                {datesError && <div className="alert alert-error" style={{ marginBottom: "12px" }}>{datesError}</div>}
+
+                                {datesLoading ? (
+                                    <AnalysisSkeleton />
+                                ) : importantDates.length === 0 ? (
+                                    <div className="alert" style={{ background: "var(--bg-surface)", color: "var(--text-muted)" }}>No important dates found in this transcript.</div>
+                                ) : (
+                                    <div>
+                                        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "12px", marginBottom: "16px" }}>
+                                            {importantDates.map((date, idx) => (
+                                                <div key={idx} style={{ border: "1px solid var(--border-subtle)", borderRadius: "12px", padding: "12px", background: "var(--bg-surface)", animation: "slideInLeft 0.3s ease", animationDelay: `${idx * 0.05}s`, animationFillMode: "both" }}>
+                                                    <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+                                                        <div style={{ fontSize: "1.5rem", minWidth: "32px" }}>📅</div>
+                                                        <div style={{ flex: 1 }}>
+                                                            <div style={{ fontWeight: 600, fontSize: "0.95rem", color: "var(--text-primary)", marginBottom: "4px" }}>{date.title}</div>
+                                                            <div style={{ fontSize: "0.82rem", color: "var(--text-secondary)", marginBottom: "6px" }}>{date.date}{date.time ? ` • ${date.time}` : ""}</div>
+                                                            {date.description && <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", fontStyle: "italic" }}>"{date.description}"</div>}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        <div style={{ height: "1px", background: "var(--border-subtle)", margin: "16px 0" }} />
+                                        <p style={{ color: "var(--text-secondary)", fontSize: "0.88rem", marginBottom: "12px" }}>Add {importantDates.length} event{importantDates.length !== 1 ? "s" : ""} to your Google Calendar.</p>
+                                        <button
+                                            className={`btn ${calendarStatus === "success" ? "btn-success" : calendarStatus === "error" ? "btn-danger" : "btn-primary"} btn-lg`}
+                                            onClick={() => { if (calendarStatus !== "idle") { setCalendarStatus("idle"); return; } void handleAddToCalendar(); }}
+                                            disabled={calendarStatus === "adding" || calendarStatus === "connecting"}
+                                            style={{ width: "100%", minHeight: "40px", fontSize: "0.95rem", fontWeight: 600, transition: "all 0.3s ease" }}
+                                        >
+                                            {calendarStatus === "connecting" || calendarStatus === "adding" ? (
+                                                <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
+                                                    <span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} />
+                                                    {calendarStatus === "connecting" ? "Connecting to Google..." : "Adding to Calendar..."}
+                                                </span>
+                                            ) : calendarStatus === "success" ? (
+                                                <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
+                                                    <CheckCircle2 size={18} /> {calendarAddedCount} Event{calendarAddedCount !== 1 ? "s" : ""} Added! Click to close
+                                                </span>
+                                            ) : calendarStatus === "error" ? (
+                                                <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
+                                                    <X size={18} /> Failed to Add - Try Again
+                                                </span>
+                                            ) : (
+                                                <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
+                                                    <Calendar size={18} /> Add {importantDates.length} Event{importantDates.length !== 1 ? "s" : ""} to Google Calendar
+                                                </span>
+                                            )}
+                                        </button>
+                                        {calendarStatus === "success" && (
+                                            <div className="alert" style={{ background: "rgba(34,197,94,0.12)", color: "var(--accent-400)", border: "1px solid rgba(34,197,94,0.3)", marginTop: "12px" }}>
+                                                ✓ Successfully added {calendarAddedCount} event{calendarAddedCount !== 1 ? "s" : ""} to your Google Calendar!
+                                            </div>
+                                        )}
+                                    </div>
                                 )}
                             </div>
                         )}

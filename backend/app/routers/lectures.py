@@ -420,7 +420,54 @@ async def list_lectures(
         if not role:
             raise HTTPException(status_code=403, detail="Not a member of this workspace")
 
-        query = query.eq("org_id", org_id)
+        # For workspace view: return workspace-scoped lectures (group_id IS NULL) + lectures from teams user is a member of
+        # Workspace-scoped items (no group_id) are accessible to all workspace members
+        workspace_scoped = (
+            supabase.table("lectures")
+            .select("*")
+            .eq("org_id", org_id)
+            .is_("group_id", "null")
+            .execute()
+        )
+        workspace_scoped_data = workspace_scoped.data or []
+
+        # Team-scoped items: only those from teams the user is a member of (or if user is owner)
+        team_scoped_data = []
+        if role == "owner":
+            # Owner sees all team-scoped lectures in the workspace
+            team_scoped = (
+                supabase.table("lectures")
+                .select("*")
+                .eq("org_id", org_id)
+                .not_("group_id", "is", None)
+                .execute()
+            )
+            team_scoped_data = team_scoped.data or []
+        else:
+            # Members only see lectures from teams they're in
+            user_teams = await GroupService.get_groups_for_user(org_id, current_user["user_id"])
+            team_ids = [t["id"] for t in user_teams]
+            
+            if team_ids:
+                team_scoped = (
+                    supabase.table("lectures")
+                    .select("*")
+                    .eq("org_id", org_id)
+                    .in_("group_id", team_ids)
+                    .execute()
+                )
+                team_scoped_data = team_scoped.data or []
+
+        # Merge workspace-scoped and team-scoped lectures
+        merged_by_id = {
+            lecture["id"]: lecture
+            for lecture in workspace_scoped_data + team_scoped_data
+        }
+        merged_lectures = list(merged_by_id.values())
+        merged_lectures.sort(key=lambda l: l.get("created_at") or "", reverse=True)
+
+        lectures = [LectureResponse(**l) for l in merged_lectures]
+        return LectureListResponse(lectures=lectures)
     else:
         query = query.eq("user_id", current_user["user_id"])
 
