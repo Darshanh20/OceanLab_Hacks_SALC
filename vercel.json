@@ -1,0 +1,61 @@
+{
+  "version": 2,
+  "buildCommand": "cd frontend && npm install && npm run build",
+  "outputDirectory": "frontend/.next",
+  "public": true,
+  "env": {
+    "NEXT_PUBLIC_API_BASE_URL": {
+      "description": "Backend API base URL",
+      "required": true,
+      "example": "https://api.yourapp.com"
+    },
+    "NEXT_PUBLIC_GOOGLE_CLIENT_ID": {
+      "description": "Google OAuth Client ID for authentication",
+      "required": false,
+      "example": "xxx.apps.googleusercontent.com"
+    },
+    "NEXTAUTH_SECRET": {
+      "description": "Secret key for NextAuth encryption",
+      "required": true,
+      "example": "your-secret-key-min-32-chars"
+    },
+    "NEXTAUTH_URL": {
+      "description": "NextAuth URL for callbacks",
+      "required": true,
+      "example": "https://yourapp.vercel.app"
+    }
+  },
+  "functions": {
+    "api/**/*.ts": {
+      "runtime": "nodejs18.x"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://api.yourapp.com/api/:path*"
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/old-page",
+      "destination": "/",
+      "permanent": true
+    }
+  ],
+  "headers": [
+    {
+      "source": "/api/:path*",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        },
+        {
+          "key": "Content-Type",
+          "value": "application/json"
+        }
+      ]
+    }
+  ]
+}
