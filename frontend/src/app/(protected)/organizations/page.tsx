@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, Building2, ArrowRight, Shield, Settings, Users, Trash2 } from "lucide-react";
+import { Plus, Building2, ArrowRight, Shield, Settings, Users, Trash2, Mail, Clock } from "lucide-react";
 import Link from "next/link";
 import { organizationsAPI } from "@/lib/api";
 import { AppRole } from "@/types";
@@ -16,6 +16,15 @@ interface Organization {
     my_role?: AppRole;
 }
 
+interface PendingInvitation {
+    id: string;
+    invite_token: string;
+    org_id: string;
+    org_name: string;
+    role: string;
+    invited_at: string;
+}
+
 export default function OrganizationsPage() {
     const [organizations, setOrganizations] = useState<Organization[]>([]);
     const [loading, setLoading] = useState(true);
@@ -24,6 +33,8 @@ export default function OrganizationsPage() {
     const [roleFilter, setRoleFilter] = useState<"all" | AppRole>("all");
     const [deletingOrgId, setDeletingOrgId] = useState<string | null>(null);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+    const [pendingInvitations, setPendingInvitations] = useState<PendingInvitation[]>([]);
+    const [acceptingInvite, setAcceptingInvite] = useState<string | null>(null);
 
     const filteredOrganizations = roleFilter === "all"
         ? organizations
@@ -36,13 +47,27 @@ export default function OrganizationsPage() {
     const fetchOrganizations = async () => {
         setLoading(true);
         try {
-            const res = await organizationsAPI.list();
-            setOrganizations(Array.isArray(res.data) ? res.data : []);
+            const [orgsRes, invitesRes] = await Promise.all([
+                organizationsAPI.list(),
+                organizationsAPI.getPendingInvitations().catch(() => ({ data: { pending_invitations: [] } })),
+            ]);
+            setOrganizations(Array.isArray(orgsRes.data) ? orgsRes.data : []);
+            setPendingInvitations(invitesRes.data?.pending_invitations || []);
         } catch (error) {
             console.error("Failed to fetch organizations:", error);
             setOrganizations([]);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleAcceptInvitation = async (inviteToken: string) => {
+        setAcceptingInvite(inviteToken);
+        try {
+            window.location.href = `/api/accept-invite?token=${inviteToken}`;
+        } catch (err) {
+            console.error("Failed to accept invitation", err);
+            setAcceptingInvite(null);
         }
     };
 
@@ -90,30 +115,70 @@ export default function OrganizationsPage() {
                 <div className="flex-center" style={{ height: "300px" }}>
                     <div className="spinner" />
                 </div>
-            ) : organizations.length === 0 ? (
-                <div className="card empty-state">
-                    <div className="empty-state-icon">
-                        <Building2 size={48} />
-                    </div>
-                    <h3>No Workspaces Yet</h3>
-                    <p>Create your first workspace to start organizing teams and knowledge.</p>
-                    <button className="btn btn-primary" onClick={() => setShowCreateModal(true)}>
-                        Create Workspace
-                    </button>
-                </div>
             ) : (
                 <>
-                    <div className="dashboard-shell dashboard-shell-single" style={{ marginBottom: "18px" }}>
-                        <div className="dashboard-panel dashboard-panel-filters">
-                            <div className="dashboard-fields dashboard-fields-inline">
-                                <label className="dashboard-field" style={{ minWidth: 260 }}>
-                                    <span className="dashboard-field-label"><Users size={14} /> Role Filter</span>
-                                    <select
-                                        className="dashboard-select"
-                                        value={roleFilter}
-                                        onChange={(e) => setRoleFilter(e.target.value as "all" | AppRole)}
-                                    >
-                                        <option value="all">All Workspaces</option>
+                    {pendingInvitations.length > 0 && (
+                        <div className="card glass" style={{ marginBottom: "20px", borderLeft: "4px solid #f59e0b" }}>
+                            <div className="card-header section-header-row" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)", padding: "16px 24px" }}>
+                                <h3 style={{ display: "flex", alignItems: "center", gap: "10px", margin: 0, color: "#f59e0b" }}>
+                                    <Mail size={20} /> Pending Invitations
+                                </h3>
+                            </div>
+                            <div className="card-body" style={{ padding: "16px 24px" }}>
+                                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                                    {pendingInvitations.map((invite) => (
+                                        <div key={invite.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px", backgroundColor: "rgba(245,158,11,0.05)", borderRadius: "6px", border: "1px solid rgba(245,158,11,0.2)" }}>
+                                            <div>
+                                                <div style={{ fontWeight: 500 }}>
+                                                    Invited to <strong>{invite.org_name}</strong>
+                                                </div>
+                                                <div style={{ fontSize: "0.85rem", color: "#64748b" }}>
+                                                    Role: {invite.role.charAt(0).toUpperCase() + invite.role.slice(1)} • Invited {new Date(invite.invited_at).toLocaleDateString()}
+                                                </div>
+                                            </div>
+                                            <button
+                                                className="btn btn-primary"
+                                                onClick={() => handleAcceptInvitation(invite.invite_token)}
+                                                disabled={acceptingInvite === invite.invite_token}
+                                                style={{ whiteSpace: "nowrap", marginLeft: "12px" }}
+                                            >
+                                                {acceptingInvite === invite.invite_token ? (
+                                                    <><span className="spinner spinner-inline" /> Accepting...</>
+                                                ) : (
+                                                    <>Accept Invitation</>
+                                                )}
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {organizations.length === 0 ? (
+                        <div className="card empty-state">
+                            <div className="empty-state-icon">
+                                <Building2 size={48} />
+                            </div>
+                            <h3>No Workspaces Yet</h3>
+                            <p>Create your first workspace to start organizing teams and knowledge.</p>
+                            <button className="btn btn-primary" onClick={() => setShowCreateModal(true)}>
+                                Create Workspace
+                            </button>
+                        </div>
+                    ) : (
+                        <>
+                            <div className="dashboard-shell dashboard-shell-single" style={{ marginBottom: "18px" }}>
+                                <div className="dashboard-panel dashboard-panel-filters">
+                                    <div className="dashboard-fields dashboard-fields-inline">
+                                        <label className="dashboard-field" style={{ minWidth: 260 }}>
+                                            <span className="dashboard-field-label"><Users size={14} /> Role Filter</span>
+                                            <select
+                                                className="dashboard-select"
+                                                value={roleFilter}
+                                                onChange={(e) => setRoleFilter(e.target.value as "all" | AppRole)}
+                                            >
+                                                <option value="all">All Workspaces</option>
                                         <option value="owner">Owner</option>
                                         <option value="admin">Admin</option>
                                         <option value="member">Member</option>
@@ -173,6 +238,8 @@ export default function OrganizationsPage() {
                             <h3>No workspaces for this role</h3>
                             <p>Try selecting a different role filter.</p>
                         </div>
+                    )}
+                        </>
                     )}
                 </>
             )}

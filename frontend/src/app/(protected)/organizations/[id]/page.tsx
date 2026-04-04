@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
-import { Users, UserPlus, Trash2, ArrowLeft, Shield, Mail, Plus, ArrowRight, Search, Upload, MessageSquare } from "lucide-react";
+import { Users, UserPlus, Trash2, ArrowLeft, Shield, Mail, Plus, ArrowRight, Search, Upload, MessageSquare, Clock, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import { organizationsAPI, groupsAPI } from "@/lib/api";
 
@@ -26,6 +26,15 @@ interface Team {
     name: string;
     description?: string;
     created_at: string;
+}
+
+interface PendingInvitation {
+    id: string;
+    invite_token: string;
+    org_id: string;
+    org_name: string;
+    role: string;
+    invited_at: string;
 }
 
 export default function OrganizationSettingsPage() {
@@ -52,12 +61,43 @@ export default function OrganizationSettingsPage() {
     const [teamSearch, setTeamSearch] = useState("");
     const [membersVisibleCount, setMembersVisibleCount] = useState(12);
     const [teamsVisibleCount, setTeamsVisibleCount] = useState(8);
+    const [inviteStatuses, setInviteStatuses] = useState<{ [email: string]: string }>({});
+    const [removeMemberIds, setRemoveMemberIds] = useState<Set<string>>(new Set());
+    const [confirmingRemoveId, setConfirmingRemoveId] = useState<string | null>(null);
 
     const canManageMembers = myRole === "owner" || myRole === "admin";
     const canRemoveMember = (role: string) => {
-        if (myRole === "owner") return role !== "owner";
-        if (myRole === "admin") return role === "member";
+        console.log("Checking canRemoveMember - myRole:", myRole, "member role:", role);
+        if (myRole === "owner") {
+            return role !== "owner";
+        }
+        if (myRole === "admin") {
+            return role === "member";
+        }
         return false;
+    };
+
+    const getStatusBadge = (email: string) => {
+        const status = inviteStatuses[email];
+        if (status === "pending") {
+            return (
+                <span style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.85rem", color: "#f59e0b" }}>
+                    <Clock size={14} /> Pending
+                </span>
+            );
+        } else if (status === "accepted") {
+            return (
+                <span style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.85rem", color: "#10b981" }}>
+                    <CheckCircle2 size={14} /> Accepted
+                </span>
+            );
+        }
+        return null;
+    };
+
+    const canAddToTeam = (email: string) => {
+        const status = inviteStatuses[email];
+        return status !== "pending";
     };
 
     const filteredMembers = members.filter((member) => {
@@ -87,7 +127,9 @@ export default function OrganizationSettingsPage() {
                 groupsAPI.listByOrg(orgId),
             ]);
             setMembers(membersRes.data);
-            setMyRole(roleRes.data?.role || null);
+            const role = roleRes.data?.role || null;
+            console.log("Fetched role from API:", role);
+            setMyRole(role);
             setTeams(Array.isArray(groupsRes.data) ? groupsRes.data : []);
         } catch (err) {
             console.error("Failed to fetch members", err);
@@ -104,7 +146,7 @@ export default function OrganizationSettingsPage() {
         try {
             await organizationsAPI.invite(orgId, inviteEmail, inviteRole);
             setInviteEmail("");
-            setSuccess(`Successfully invited ${inviteEmail}`);
+            setSuccess(`Invitation sent to ${inviteEmail}. They will need to accept it before being added to teams.`);
             setShowInviteModal(false);
             await fetchMembers();
         } catch (err: unknown) {
@@ -116,13 +158,22 @@ export default function OrganizationSettingsPage() {
     };
 
     const handleRemoveMember = async (userId: string) => {
-        if (!confirm("Are you sure you want to remove this member?")) return;
+        // First click: show confirmation
+        if (confirmingRemoveId !== userId) {
+            setConfirmingRemoveId(userId);
+            return;
+        }
+        
+        // Second click: actually remove
         setRemovingUserId(userId);
         try {
             await organizationsAPI.removeMember(orgId, userId);
             setMembers(prev => prev.filter(m => m.user_id !== userId));
+            setConfirmingRemoveId(null);
+            setSuccess("Member removed successfully");
         } catch (err) {
             console.error("Failed to remove member", err);
+            setError("Failed to remove member");
         } finally {
             setRemovingUserId(null);
         }
@@ -149,6 +200,8 @@ export default function OrganizationSettingsPage() {
         }
     };
 
+
+
     return (
         <div className="container-fluid">
             <div style={{ marginBottom: "24px" }}>
@@ -161,6 +214,9 @@ export default function OrganizationSettingsPage() {
                 <div>
                     <h1 className="page-title">Workspace Access</h1>
                     <p className="page-subtitle">Review members and manage workspace teams in one place</p>
+                    {process.env.NODE_ENV === "development" && (
+                        <p style={{ fontSize: "0.75rem", color: "#64748b", marginTop: "8px" }}>DEBUG: myRole={myRole}, canManageMembers={String(canManageMembers)}</p>
+                    )}
                 </div>
                 <div style={{ display: "flex", gap: "10px" }}>
                     {canManageMembers && activeTab === "teams" && (
@@ -190,6 +246,8 @@ export default function OrganizationSettingsPage() {
                     Teams ({teams.length})
                 </button>
             </div>
+
+
 
             {activeTab === "members" ? (
                 <div className="card glass">
@@ -223,6 +281,7 @@ export default function OrganizationSettingsPage() {
                                             <tr>
                                                 <th>Member</th>
                                                 <th>Role</th>
+                                                <th>Status</th>
                                                 <th>Teams</th>
                                                 <th>Joined</th>
                                                 {canManageMembers && <th className="text-right">Actions</th>}
@@ -241,6 +300,9 @@ export default function OrganizationSettingsPage() {
                                                         <span className={`badge-role ${member.role}`}>
                                                             {member.role.toUpperCase()}
                                                         </span>
+                                                    </td>
+                                                    <td>
+                                                        {getStatusBadge(member.users.email)}
                                                     </td>
                                                     <td>
                                                         {member.groups && member.groups.length > 0 ? (
@@ -272,11 +334,18 @@ export default function OrganizationSettingsPage() {
                                                         <td className="text-right">
                                                             {canRemoveMember(member.role) && (
                                                                 <button
-                                                                    className="btn-icon btn-danger-soft"
+                                                                    className={`btn-icon ${confirmingRemoveId === member.user_id ? "btn-danger" : "btn-danger-soft"}`}
                                                                     onClick={() => handleRemoveMember(member.user_id)}
                                                                     disabled={removingUserId === member.user_id}
+                                                                    title={confirmingRemoveId === member.user_id ? "Click again to confirm removal" : "Click to remove member"}
                                                                 >
-                                                                    {removingUserId === member.user_id ? <span className="spinner spinner-inline" /> : <Trash2 size={14} />}
+                                                                    {removingUserId === member.user_id ? (
+                                                                        <span className="spinner spinner-inline" />
+                                                                    ) : confirmingRemoveId === member.user_id ? (
+                                                                        <span style={{ fontSize: "0.75rem", fontWeight: "bold" }}>CONFIRM</span>
+                                                                    ) : (
+                                                                        <Trash2 size={14} />
+                                                                    )}
                                                                 </button>
                                                             )}
                                                             {!canRemoveMember(member.role) && (

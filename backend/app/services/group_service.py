@@ -1,5 +1,6 @@
 from typing import List, Optional
 from app.services.supabase_client import get_supabase
+from app.services.email_service import send_team_added_email
 
 class GroupService:
     @staticmethod
@@ -70,12 +71,12 @@ class GroupService:
         return [item["groups"] for item in result.data if item.get("groups") and item["groups"]["org_id"] == org_id]
 
     @staticmethod
-    async def add_group_member(group_id: str, user_id: str, role: str = "member") -> dict:
+    async def add_group_member(group_id: str, user_id: str, role: str = "member", notify_email: Optional[str] = None) -> dict:
         supabase = get_supabase()
 
         group_result = (
             supabase.table("groups")
-            .select("org_id")
+            .select("org_id, name")
             .eq("id", group_id)
             .single()
             .execute()
@@ -84,6 +85,21 @@ class GroupService:
             raise ValueError("Group not found")
 
         org_id = group_result.data["org_id"]
+        group_name = group_result.data.get("name", "Team")
+
+        # Check if member has accepted workspace invite
+        invite_status = (
+            supabase.table("workspace_invites")
+            .select("status")
+            .eq("org_id", org_id)
+            .eq("user_id", user_id)
+            .order("invited_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        
+        if invite_status.data and invite_status.data[0].get("status") == "pending":
+            raise ValueError("Member has not accepted workspace invite yet")
 
         # If user is not yet an org member, add them as org member first.
         org_member = (
@@ -122,6 +138,19 @@ class GroupService:
         
         if not result.data:
             raise ValueError("Failed to add member to group")
+        
+        # Send team added email
+        if notify_email:
+            org_result = supabase.table("organizations").select("name").eq("id", org_id).execute()
+            org_name = org_result.data[0].get("name") if org_result.data else "Workspace"
+            
+            member_name = notify_email.split("@")[0]
+            send_team_added_email(
+                to_email=notify_email,
+                member_name=member_name,
+                team_name=group_name,
+                workspace_name=org_name
+            )
             
         return result.data[0]
 
