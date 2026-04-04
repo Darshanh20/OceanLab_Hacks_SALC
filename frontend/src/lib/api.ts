@@ -142,8 +142,8 @@ export const analysisAPI = {
             group_id: groupId,
             force_refresh: forceRefresh,
         }),
-    dates: (lectureId: string) =>
-        api.post("/api/analysis/dates", { lecture_id: lectureId }),
+    dates: (lectureId: string, refresh: boolean = false) =>
+        api.post("/api/analysis/dates", { lecture_id: lectureId, refresh }),
 };
 
 export const exportAPI = {

@@ -423,17 +423,20 @@ export default function LectureDetailPage() {
             : <MarkdownRenderer content={getDisplayContent(content)} />;
     };
 
-    const fetchImportantDates = async () => {
-        if (importantDates.length > 0 || datesLoading) return;
+    const fetchImportantDates = async (forceRefresh: boolean = false) => {
+        if ((importantDates.length > 0 && !forceRefresh) || datesLoading) return importantDates;
         setDatesLoading(true);
         setDatesError("");
         try {
-            const res = await analysisAPI.dates(lectureId);
-            setImportantDates(res.data.dates || []);
+            const res = await analysisAPI.dates(lectureId, forceRefresh);
+            const dates = Array.isArray(res.data.dates) ? res.data.dates : [];
+            setImportantDates(dates);
             if (res.data.cached) setDatesCached(true);
+            return dates;
         } catch (err: unknown) {
             setDatesError("Failed to extract important dates");
             setImportantDates([]);
+            return [];
         } finally { setDatesLoading(false); }
     };
 
@@ -602,24 +605,53 @@ export default function LectureDetailPage() {
             await signIn('google');
             return;
         }
-        await addToCalendar();
+
+        let dates = importantDates;
+        if (dates.length === 0) {
+            const refreshedDates = await fetchImportantDates(true);
+            dates = refreshedDates || [];
+        }
+
+        if (dates.length === 0) {
+            setCalendarStatus('error');
+            setDatesError("No important dates were found to add to the calendar.");
+            return;
+        }
+
+        await addToCalendar(dates);
     };
 
     useEffect(() => {
         if (session?.accessToken && calendarStatus === 'connecting') {
-            void addToCalendar();
+            void (async () => {
+                const dates = importantDates.length > 0 ? importantDates : (await fetchImportantDates(true)) || [];
+                if (dates.length === 0) {
+                    setCalendarStatus('error');
+                    setDatesError("No important dates were found to add to the calendar.");
+                    return;
+                }
+                await addToCalendar(dates);
+            })();
         }
-    }, [session, calendarStatus]);
+    }, [session, calendarStatus, importantDates]);
 
-    const addToCalendar = async () => {
+    const addToCalendar = async (dates: Array<{ title: string; date: string; time: string | null; description: string }>) => {
         setCalendarStatus('adding');
         try {
-            const eventsToAdd = importantDates.map(d => ({
+            const eventsToAdd = dates
+                .filter((d) => typeof d.date === "string" && d.date.trim().length > 0)
+                .map(d => ({
                 title: d.title,
                 date: d.date,
                 time: d.time,
                 description: d.description,
             }));
+
+            if (eventsToAdd.length === 0) {
+                setCalendarStatus('error');
+                setDatesError("No valid dates were available to add to the calendar.");
+                return;
+            }
 
             const res = await fetch('/api/add-to-calendar', {
                 method: 'POST',
@@ -634,6 +666,7 @@ export default function LectureDetailPage() {
                 setCalendarStatus('success');
                 setCalendarAddedCount(data.added);
             } else {
+                setDatesError(data.error || (Array.isArray(data.errors) ? data.errors[0] : "Failed to add dates to calendar"));
                 setCalendarStatus('error');
             }
         } catch {

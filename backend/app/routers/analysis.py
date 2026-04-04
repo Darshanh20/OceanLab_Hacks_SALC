@@ -436,7 +436,7 @@ async def get_important_dates(req: AnalysisRequest, current_user: dict = Depends
         import json
         try:
             dates = json.loads(cached_content)
-            if isinstance(dates, list):
+            if isinstance(dates, list) and dates:
                 return DatesResponse(dates=dates, cached=True)
         except Exception:
             pass
@@ -445,7 +445,8 @@ async def get_important_dates(req: AnalysisRequest, current_user: dict = Depends
     dates = await extract_important_dates(transcript)
     
     import json
-    await store_analysis_cache(supabase, req.lecture_id, cache_key, json.dumps(dates))
+    if dates:
+        await store_analysis_cache(supabase, req.lecture_id, cache_key, json.dumps(dates))
     return DatesResponse(dates=dates, cached=False)
 
 

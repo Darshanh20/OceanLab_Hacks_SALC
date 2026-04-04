@@ -8,6 +8,7 @@ const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
 const GOOGLE_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_API_KEY || '';
 const DISCOVERY_DOCS = ['https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest'];
 const SCOPES = 'https://www.googleapis.com/auth/calendar.events';
+const hasGoogleConfig = Boolean(GOOGLE_CLIENT_ID && GOOGLE_API_KEY);
 
 interface CalendarEvent {
   title: string
@@ -21,6 +22,20 @@ export default function InlineActionDemo() {
   const [addedCount, setAddedCount] = useState(0);
   const [totalEvents, setTotalEvents] = useState(0);
   const [gapiLoaded, setGapiLoaded] = useState(false);
+  const [initError, setInitError] = useState<string | null>(null);
+
+  const formatUnknownError = (error: unknown): string => {
+    if (error instanceof Error) return error.message;
+    if (typeof error === 'string') return error;
+    if (error && typeof error === 'object') {
+      try {
+        return JSON.stringify(error);
+      } catch {
+        return 'Unknown Google API initialization error';
+      }
+    }
+    return 'Unknown Google API initialization error';
+  };
 
   // Generate sample events with future dates
   const allEvents = useMemo(() => {
@@ -57,25 +72,39 @@ export default function InlineActionDemo() {
   // Load and initialize gapi on mount
   useEffect(() => {
     const loadGapi = async () => {
+      if (!hasGoogleConfig) {
+        setInitError('Google Calendar is unavailable. Missing NEXT_PUBLIC_GOOGLE_CLIENT_ID or NEXT_PUBLIC_GOOGLE_API_KEY.');
+        return;
+      }
+
       try {
         console.log('Starting gapi initialization...');
         
-        // Dynamically load gapi script
-        await new Promise<void>((resolve, reject) => {
-          const script = document.createElement('script');
-          script.src = 'https://apis.google.com/js/api.js';
-          script.async = true;
-          script.defer = true;
-          script.onload = () => {
-            console.log('gapi script loaded');
-            resolve();
-          };
-          script.onerror = () => reject(new Error('Failed to load gapi'));
-          document.head.appendChild(script);
-        });
+        if (!window.gapi) {
+          // Dynamically load gapi script only once
+          await new Promise<void>((resolve, reject) => {
+            const existing = document.querySelector('script[src="https://apis.google.com/js/api.js"]') as HTMLScriptElement | null;
+            if (existing) {
+              existing.addEventListener('load', () => resolve(), { once: true });
+              existing.addEventListener('error', () => reject(new Error('Failed to load gapi')), { once: true });
+              return;
+            }
+
+            const script = document.createElement('script');
+            script.src = 'https://apis.google.com/js/api.js';
+            script.async = true;
+            script.defer = true;
+            script.onload = () => {
+              console.log('gapi script loaded');
+              resolve();
+            };
+            script.onerror = () => reject(new Error('Failed to load gapi'));
+            document.head.appendChild(script);
+          });
+        }
 
         // Wait for gapi to be globally available
-        await new Promise<void>((resolve) => {
+        await new Promise<void>((resolve, reject) => {
           let attempts = 0;
           const checkGapi = setInterval(() => {
             attempts++;
@@ -86,7 +115,7 @@ export default function InlineActionDemo() {
             }
             if (attempts > 100) {
               clearInterval(checkGapi);
-              resolve();
+              reject(new Error('gapi did not become available in time'));
             }
           }, 100);
         });
@@ -109,9 +138,12 @@ export default function InlineActionDemo() {
         });
 
         setGapiLoaded(true);
+        setInitError(null);
         console.log('✓ gapi initialized successfully');
-      } catch (error) {
-        console.error('✗ Failed to initialize gapi:', error);
+      } catch (error: unknown) {
+        const message = formatUnknownError(error);
+        console.warn('Google Calendar init failed:', message);
+        setInitError(message);
         setStatus('error');
       }
     };
@@ -272,6 +304,14 @@ export default function InlineActionDemo() {
         return { background: '#ef4444', color: 'white' };
     }
   };
+
+  if (initError) {
+    return (
+      <div style={{ padding: '10px 16px', fontSize: '12px', color: '#ef4444' }}>
+        Google Calendar unavailable: {initError}
+      </div>
+    );
+  }
 
   if (!gapiLoaded) {
     return (
