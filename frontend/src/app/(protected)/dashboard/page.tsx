@@ -80,6 +80,12 @@ function getStatusDetail(status: string) {
     return map[status] || status;
 }
 
+interface PendingSummary {
+    voice?: { type: string; duration: number } | null;
+    document?: { type: string; filename: string } | null;
+    video?: { type: string; url: string } | null;
+}
+
 export default function DashboardPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -91,6 +97,7 @@ export default function DashboardPage() {
     const [selectedGroupId, setSelectedGroupId] = useState("");
     const [selectedGroupRole, setSelectedGroupRole] = useState<string | null>(null);
     const [openMenuLectureId, setOpenMenuLectureId] = useState<string | null>(null);
+    const [pendingSummary, setPendingSummary] = useState<PendingSummary | null>(null);
 
     const orgRoleMap = new Map(organizations.map((org) => [org.id, org.my_role]));
 
@@ -177,6 +184,87 @@ export default function DashboardPage() {
 
         fetchSelectedGroupRole();
     }, [selectedGroupId]);
+
+    // Load and process pending summary from localStorage
+    useEffect(() => {
+        const processPendingSummary = async () => {
+            const storedSummary = localStorage.getItem("pendingSummary");
+            if (!storedSummary) return;
+
+            try {
+                const parsed = JSON.parse(storedSummary);
+                setPendingSummary(parsed);
+
+                // Process voice recording
+                if (parsed.voice?.audioBase64) {
+                    try {
+                        const base64Data = parsed.voice.audioBase64.split(",")[1];
+                        const binaryString = atob(base64Data);
+                        const bytes = new Uint8Array(binaryString.length);
+                        for (let i = 0; i < binaryString.length; i++) {
+                            bytes[i] = binaryString.charCodeAt(i);
+                        }
+                        const audioBlob = new Blob([bytes], { type: "audio/webm" });
+                        const formData = new FormData();
+                        formData.append("title", `Recording - ${new Date().toLocaleDateString()}`);
+                        formData.append("audio", audioBlob, "recording.webm");
+
+                        const response = await lecturesAPI.upload(formData);
+                        if (response.data?.id) {
+                            setLectures((prev) => [response.data, ...prev]);
+                            localStorage.removeItem("pendingSummary");
+                            setPendingSummary(null);
+                        }
+                    } catch (err) {
+                        console.error("Failed to upload voice recording:", err);
+                    }
+                    return;
+                }
+
+                // Process document file
+                if (parsed.document?.fileBase64) {
+                    try {
+                        const base64Data = parsed.document.fileBase64.split(",")[1];
+                        const binaryString = atob(base64Data);
+                        const bytes = new Uint8Array(binaryString.length);
+                        for (let i = 0; i < binaryString.length; i++) {
+                            bytes[i] = binaryString.charCodeAt(i);
+                        }
+                        const fileBlob = new Blob([bytes], { type: parsed.document.mimeType || "application/octet-stream" });
+                        const formData = new FormData();
+                        formData.append("title", parsed.document.filename.replace(/\.[^/.]+$/, ""));
+                        formData.append("audio", fileBlob, parsed.document.filename);
+
+                        const response = await lecturesAPI.upload(formData);
+                        if (response.data?.id) {
+                            setLectures((prev) => [response.data, ...prev]);
+                            localStorage.removeItem("pendingSummary");
+                            setPendingSummary(null);
+                        }
+                    } catch (err) {
+                        console.error("Failed to upload document:", err);
+                    }
+                    return;
+                }
+
+                // For video URL: redirect to upload page with pre-filled URL
+                // (Video URLs require special handling and can't be directly uploaded via FormData)
+                if (parsed.video?.url) {
+                    // Store the video URL and redirect to upload page
+                    localStorage.setItem("prefilledVideoUrl", parsed.video.url);
+                    localStorage.removeItem("pendingSummary");
+                    setPendingSummary(null);
+                    // User will need to go to /upload to process the video
+                    return;
+                }
+            } catch (err) {
+                console.error("Failed to parse pending summary:", err);
+            }
+        };
+
+        const timer = setTimeout(processPendingSummary, 500);
+        return () => clearTimeout(timer);
+    }, []);
 
     useEffect(() => {
         fetchLectures();
@@ -291,7 +379,7 @@ export default function DashboardPage() {
                         </p>
                     </div>
                     <div className="dashboard-actions">
-                        <button className="btn btn-primary" onClick={() => router.push(uploadPath)}>
+                        <button className="btn btn-secondary" onClick={() => router.push(uploadPath)}>
                             <Upload size={16} /> Upload Knowledge
                         </button>
                         <button className="btn btn-secondary" onClick={() => router.push("/record")}>
