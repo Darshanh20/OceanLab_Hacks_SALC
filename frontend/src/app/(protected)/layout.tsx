@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { SessionProvider } from "next-auth/react";
 import { useAuth } from "@/lib/auth";
 import Sidebar from "@/components/Sidebar";
 
@@ -33,9 +34,9 @@ export default function ProtectedLayout({
     }
 
     return (
-        <>
+        <SessionProvider>
             <Sidebar />
             <main className="main-content">{children}</main>
-        </>
+        </SessionProvider>
     );
 }

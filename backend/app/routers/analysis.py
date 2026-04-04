@@ -22,6 +22,7 @@ from app.services.cache_service import (
     ANALYSIS_TYPES,
     get_cached_analysis,
     get_or_generate_analysis,
+    store_analysis_cache,
 )
 
 router = APIRouter(prefix="/api/analysis", tags=["Analysis"])
@@ -429,7 +430,8 @@ async def get_highlights(req: AnalysisRequest, current_user: dict = Depends(get_
 async def get_important_dates(req: AnalysisRequest, current_user: dict = Depends(get_current_user)):
     """Extract important dates from lecture (cached)."""
     cache_key = "important_dates"
-    cached_content = _get_cached(req.lecture_id, cache_key)
+    supabase = get_supabase()
+    cached_content = None if req.refresh else await get_cached_analysis(supabase, req.lecture_id, cache_key)
     if cached_content:
         import json
         try:
@@ -443,7 +445,7 @@ async def get_important_dates(req: AnalysisRequest, current_user: dict = Depends
     dates = await extract_important_dates(transcript)
     
     import json
-    _save_cache(req.lecture_id, cache_key, json.dumps(dates))
+    await store_analysis_cache(supabase, req.lecture_id, cache_key, json.dumps(dates))
     return DatesResponse(dates=dates, cached=False)
 
 
