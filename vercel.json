@@ -1,45 +1,9 @@
 {
   "version": 2,
-  "buildCommand": "cd frontend && npm install && npm run build",
-  "outputDirectory": "frontend/.next",
+  "buildCommand": "npm install && npm run build",
+  "outputDirectory": ".next",
   "public": true,
   "env": {
-    "NEXT_PUBLIC_API_BASE_URL": "https://oceanlab-hacks-salc.onrender.com",
-    "NEXT_PUBLIC_GOOGLE_CLIENT_ID": "@NEXT_PUBLIC_GOOGLE_CLIENT_ID",
-    "NEXTAUTH_SECRET": "@NEXTAUTH_SECRET",
-    "NEXTAUTH_URL": "@NEXTAUTH_URL"
-  },
-  "functions": {
-    "api/**/*.ts": {
-      "runtime": "nodejs18.x"
-    }
-  },
-  "rewrites": [
-    {
-      "source": "/api/:path*",
-      "destination": "https://oceanlab-hacks-salc.onrender.com/api/:path*"
-    }
-  ],
-  "redirects": [
-    {
-      "source": "/old-page",
-      "destination": "/",
-      "permanent": true
-    }
-  ],
-  "headers": [
-    {
-      "source": "/api/:path*",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "no-cache, no-store, must-revalidate"
-        },
-        {
-          "key": "Content-Type",
-          "value": "application/json"
-        }
-      ]
-    }
-  ]
+    "NEXT_PUBLIC_API_BASE_URL": "https://oceanlab-hacks-salc.onrender.com"
+  }
 }
