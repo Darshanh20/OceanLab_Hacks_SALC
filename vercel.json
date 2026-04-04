@@ -7,7 +7,7 @@
     "NEXT_PUBLIC_API_BASE_URL": {
       "description": "Backend API base URL",
       "required": true,
-      "example": "https://api.yourapp.com"
+      "example": "https://oceanlab-hacks-salc.onrender.com"
     },
     "NEXT_PUBLIC_GOOGLE_CLIENT_ID": {
       "description": "Google OAuth Client ID for authentication",
@@ -33,7 +33,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://api.yourapp.com/api/:path*"
+      "destination": "https://oceanlab-hacks-salc.onrender.com/api/:path*"
     }
   ],
   "redirects": [
