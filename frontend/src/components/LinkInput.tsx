@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { CheckCircle2, AlertCircle, Search } from "lucide-react";
+import { API_URL } from "@/lib/api";
 
 interface LinkInputProps {
     onSuccess: (lectureId: string) => void;
@@ -30,7 +31,7 @@ export default function LinkInput({ onSuccess, onError, orgId, groupId }: LinkIn
 
         const pollInterval = setInterval(async () => {
             try {
-                const response = await fetch(`/api/process/status/${lectureId}`);
+                const response = await fetch(`${API_URL}/api/process/status/${lectureId}`);
                 if (!response.ok) return;
 
                 const data = await response.json();
@@ -95,6 +96,11 @@ export default function LinkInput({ onSuccess, onError, orgId, groupId }: LinkIn
         setSuccess(false);
 
         try {
+            const token = typeof window !== "undefined" ? localStorage.getItem("salc_token") : null;
+            if (!token) {
+                throw new Error("Please sign in again to add a link.");
+            }
+
             // Step 1: Detecting
             setCurrentStep("detecting");
             await new Promise(resolve => setTimeout(resolve, 500));
@@ -108,8 +114,11 @@ export default function LinkInput({ onSuccess, onError, orgId, groupId }: LinkIn
             if (orgId) formData.append("org_id", orgId);
             if (groupId) formData.append("group_id", groupId);
 
-            const response = await fetch("/api/process", {
+            const response = await fetch(`${API_URL}/api/process/link`, {
                 method: "POST",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
                 body: formData,
             });
 

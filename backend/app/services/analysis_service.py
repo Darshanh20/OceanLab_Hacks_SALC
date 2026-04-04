@@ -4,26 +4,74 @@ import asyncio
 import tiktoken
 import json
 import re
+import time
 from datetime import datetime, timedelta
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODEL = "llama-3.1-8b-instant"
+MAX_TRANSCRIPT_CHARS = 50000
+FAST_MODE = True
+
+
+def estimate_tokens(text: str) -> int:
+    # Fast approximation used for budget gating.
+    return max(1, int(len(text or "") / 4))
+
+
+def clean_text(text: str) -> str:
+    return re.sub(r"\s+", " ", text or "").strip()
+
+
+def adaptive_chunk_size(text_length: int) -> int:
+    if text_length < 5000:
+        return 800
+    if text_length < 15000:
+        return 600
+    return 500
+
+
+class TokenManager:
+    def __init__(self, limit_per_min: int = 8000):
+        self.limit = limit_per_min
+        self.used = 0
+        self.reset_time = time.time() + 60
+        self._lock = asyncio.Lock()
+
+    async def wait_for_tokens(self, tokens_needed: int) -> None:
+        while True:
+            async with self._lock:
+                now = time.time()
+
+                if now > self.reset_time:
+                    self.used = 0
+                    self.reset_time = now + 60
+
+                if self.used + tokens_needed <= self.limit:
+                    self.used += tokens_needed
+                    print(f"[TOKEN] Used: {self.used}/{self.limit}")
+                    return
+
+            await asyncio.sleep(0.2)
+
+
+token_manager = TokenManager(limit_per_min=8000)
 
 # --------------------------
 # Utility functions for summarization and analysis
 # --------------------------
-def chunk_text(text: str, max_tokens: int = 1200, overlap: int = 200):
+def chunk_text(text: str, max_tokens: int = 800, overlap: int = 100):
     encoder = tiktoken.get_encoding("cl100k_base")
     tokens = encoder.encode(text)
 
     chunks = []
     start = 0
 
+    step = max(1, max_tokens - overlap)
     while start < len(tokens):
         end = min(start + max_tokens, len(tokens))
         chunk = encoder.decode(tokens[start:end])
         chunks.append(chunk)
-        start += max_tokens - overlap
+        start += step
 
     return chunks
 
@@ -31,46 +79,87 @@ def chunk_text(text: str, max_tokens: int = 1200, overlap: int = 200):
 semaphore = asyncio.Semaphore(3)
 
 
-async def summarize_chunk(chunk: str, prompt: str):
+async def summarize_chunk(chunk: str, prompt: str) -> str:
     async with semaphore:
-        return await safe_groq_call(
-            "You are a concise academic summarizer.",
+        return (await safe_groq_call(
+            "You are an expert educator. Create a structured, detailed summary with headings, key concepts, examples, and definitions. Do not omit important details.",
             f"{prompt}\n\nTEXT:\n{chunk}",
-            max_tokens=1024
-        )
+            max_tokens=800
+        )) or ""
 
 
-async def summarize_chunks(chunks: list[str], prompt: str):
+async def summarize_chunks(chunks: list[str], prompt: str) -> list[str]:
     tasks = [summarize_chunk(c, prompt) for c in chunks]
-    return await asyncio.gather(*tasks)
+    results = await asyncio.gather(*tasks)
+    return [r for r in results if r]
 
 
 async def merge_summaries(partials: list[str], prompt: str) -> str:
     combined = "\n\n".join(partials)
+    combined = combined[:15000]
 
     result = await safe_groq_call(
         "You are an expert academic summarizer.",
         f"{prompt}\n\nCONTENT:\n{combined}",
-        max_tokens=2048
+        max_tokens=800
     )
     return result or ""
+
+
+async def hierarchical_merge(partials: list[str], prompt: str) -> str:
+    """
+    Merge partial summaries in levels to preserve content quality
+    while avoiding oversized single merge prompts.
+    """
+    level = [p for p in partials if p]
+    if not level:
+        return ""
+
+    while len(level) > 1:
+        next_level: list[str] = []
+        for i in range(0, len(level), 3):
+            group = level[i:i + 4]
+            combined = "\n\n".join(group)[:15000]
+            merged = await safe_groq_call(
+                "You are an expert educator. Merge these partial summaries into one cohesive, detailed, structured summary with headings and no information loss.",
+                f"{prompt}\n\nCONTENT:\n{combined}",
+                max_tokens=800,
+            )
+            if merged:
+                next_level.append(merged)
+
+        if not next_level:
+            return ""
+        level = next_level
+
+    return level[0]
 
 # ──────────────────────────────────────
 # 0. Groq API Wrapper
 # ─────────────────────────────────────
 
-async def safe_groq_call(system, user, max_tokens=2048, retries=3):
+async def safe_groq_call(system, user, max_tokens=2048, retries=5) -> str:
     delay = 1
 
     for attempt in range(retries):
         try:
+            tokens_needed = estimate_tokens(f"{system}\n{user}") + max_tokens
+            await token_manager.wait_for_tokens(tokens_needed)
             return await _call_groq(system, user, max_tokens)
         except Exception as e:
+            err = str(e).lower()
             if attempt == retries - 1:
                 raise e  # final fail
 
-            await asyncio.sleep(delay)
-            delay *= 2  # exponential backoff
+            if "429" in err or "rate_limit" in err or "too many requests" in err or "token" in err:
+                await asyncio.sleep(delay)
+                delay *= 2  # exponential backoff for rate limits
+                continue
+
+            # Small retry window for transient non-rate errors.
+            await asyncio.sleep(min(delay, 2))
+
+    raise RuntimeError("Groq call failed after retries")
 
 async def _call_groq(system_prompt: str, user_prompt: str, max_tokens: int = 4096) -> str:
     """Generic Groq API call."""
@@ -115,14 +204,34 @@ async def generate_summary(transcript: str, format_type: str = "detailed") -> st
 
     prompt = prompts.get(format_type, prompts["detailed"])
 
-    # STEP 1: chunk
-    chunks = chunk_text(transcript)
+    # Preprocess transcript and apply a soft cap only for very large inputs.
+    transcript = clean_text(transcript)
+    if len(transcript) > MAX_TRANSCRIPT_CHARS:
+        transcript = transcript[:MAX_TRANSCRIPT_CHARS]
+    if not transcript:
+        return ""
 
-    # STEP 2: parallel summaries
+    # STEP 1: chunk
+    max_chunk_tokens = adaptive_chunk_size(len(transcript))
+    if FAST_MODE:
+        max_chunk_tokens = min(max_chunk_tokens, 600)
+    chunks = chunk_text(transcript, max_tokens=max_chunk_tokens, overlap=100)
+    chunks = chunks[:8]
+
+    # STEP 2: controlled parallel summaries (bounded by semaphore)
     partials = await summarize_chunks(chunks, prompt)
+    if not partials:
+        return ""
 
     # STEP 3: final merge
-    final = await merge_summaries([p for p in partials if p is not None], prompt)
+    try:
+        if FAST_MODE or len(partials) <= 6:
+            final = await merge_summaries(partials, prompt)
+        else:
+            final = await hierarchical_merge(partials[:12], prompt)
+    except Exception:
+        # Fallback keeps pipeline resilient when merge step fails.
+        final = "\n\n".join(partials[:3])
 
     return final or ""
 
@@ -691,7 +800,7 @@ def aggregate_workspace_action_plan(lecture_plans: list[dict]) -> tuple[str, dic
         teams.setdefault(team, []).append(t.get("title", "Untitled task"))
 
     timeline = [t for t in tasks if t.get("deadline")]
-    timeline.sort(key=lambda t: t.get("deadline"))
+    timeline.sort(key=lambda t: t.get("deadline") or "9999-12-31")
 
     risks = []
     blocked = [t for t in tasks if t.get("status") == "blocked"]

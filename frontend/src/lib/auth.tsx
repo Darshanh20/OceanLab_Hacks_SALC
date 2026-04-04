@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
-import { authAPI } from "@/lib/api";
+import { api, authAPI } from "@/lib/api";
 import { User } from "@/types";
 
 interface AuthContextType {
@@ -27,6 +27,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const storedUser = localStorage.getItem("salc_user");
 
         if (storedToken && storedUser) {
+            api.defaults.headers.common.Authorization = `Bearer ${storedToken}`;
             setToken(storedToken);
             try {
                 setUser(JSON.parse(storedUser));
@@ -44,6 +45,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         localStorage.setItem("salc_token", access_token);
         localStorage.setItem("salc_user", JSON.stringify(userData));
+        api.defaults.headers.common.Authorization = `Bearer ${access_token}`;
         setToken(access_token);
         setUser(userData);
     }, []);
@@ -55,6 +57,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         localStorage.setItem("salc_token", access_token);
         localStorage.setItem("salc_user", JSON.stringify(userData));
+        api.defaults.headers.common.Authorization = `Bearer ${access_token}`;
         setToken(access_token);
         setUser(userData);
     }, []);
@@ -62,6 +65,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const logout = useCallback(() => {
         localStorage.removeItem("salc_token");
         localStorage.removeItem("salc_user");
+        delete api.defaults.headers.common.Authorization;
         setToken(null);
         setUser(null);
     }, []);

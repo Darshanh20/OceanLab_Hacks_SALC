@@ -1,7 +1,29 @@
 import os
+import shutil
 import subprocess
 import tempfile
+import sys
 from pathlib import Path
+
+
+def _resolve_ffmpeg_location() -> str | None:
+    """Return a directory yt-dlp can use for FFmpeg, if available."""
+    if shutil.which("ffmpeg"):
+        return None
+
+    local_app_data = os.getenv("LOCALAPPDATA")
+    if not local_app_data:
+        return None
+
+    ffmpeg_root = Path(local_app_data) / "ffmpeg"
+    if not ffmpeg_root.exists():
+        return None
+
+    for bin_dir in ffmpeg_root.glob("**/bin"):
+        if (bin_dir / "ffmpeg.exe").exists():
+            return str(bin_dir)
+
+    return None
 
 
 async def download_youtube_audio(url: str, temp_dir: str) -> dict:
@@ -9,23 +31,33 @@ async def download_youtube_audio(url: str, temp_dir: str) -> dict:
     try:
         # Check if yt-dlp is installed
         try:
-            subprocess.run(["yt-dlp", "--version"], capture_output=True, check=True, timeout=5)
+            subprocess.run([sys.executable, "-m", "yt_dlp", "--version"], capture_output=True, check=True, timeout=5)
         except (subprocess.CalledProcessError, FileNotFoundError):
             raise ValueError("yt-dlp is not installed. Please install it using: pip install yt-dlp")
+
+        ffmpeg_location = _resolve_ffmpeg_location()
+        if ffmpeg_location is None and not shutil.which("ffmpeg"):
+            raise ValueError("FFmpeg is required but not installed. Please install FFmpeg (https://ffmpeg.org/download.html)")
         
         output_template = os.path.join(temp_dir, "%(title)s.%(ext)s")
         
         # Use yt-dlp to download best audio and convert to MP3 with FFmpeg
+        ytdlp_command = [
+            sys.executable,
+            "-m",
+            "yt_dlp",
+            "-f", "bestaudio/best",
+            "--extract-audio",
+            "--audio-format", "mp3",
+            "--audio-quality", "192",
+            "-o", output_template,
+            url,
+        ]
+        if ffmpeg_location:
+            ytdlp_command.extend(["--ffmpeg-location", ffmpeg_location])
+
         result = subprocess.run(
-            [
-                "yt-dlp",
-                "-f", "bestaudio/best",
-                "--extract-audio",
-                "--audio-format", "mp3",
-                "--audio-quality", "192",
-                "-o", output_template,
-                url,
-            ],
+            ytdlp_command,
             capture_output=True,
             text=True,
             timeout=300,

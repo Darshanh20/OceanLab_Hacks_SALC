@@ -172,15 +172,22 @@ async def _process_lecture(lecture_id: str, audio_url: str, file_ext: str):
                 "status": "summarizing",
             }).eq("id", lecture_id).execute()
 
-        # Step 2: Summarize with Groq
-        summary = await generate_summary(result["transcript_text"], "detailed")
-        supabase.table("lectures").update({
-            "summary_text": summary,
-            "status": "processing_rag",
-        }).eq("id", lecture_id).execute()
+        # Step 2: Start summary generation in parallel (non-blocking vs RAG)
+        supabase.table("lectures").update({"status": "processing_rag"}).eq("id", lecture_id).execute()
+        summary_task = asyncio.create_task(generate_summary(result["transcript_text"], "detailed"))
 
         # Step 3: RAG processing
         await process_lecture_for_rag(lecture_id, result["transcript_text"])
+
+        # Step 4: Persist summary when ready (does not delay transcript availability)
+        summary = ""
+        try:
+            summary = await summary_task
+        except Exception:
+            summary = ""
+        if summary:
+            supabase.table("lectures").update({"summary_text": summary}).eq("id", lecture_id).execute()
+
         supabase.table("lectures").update({"status": "completed"}).eq("id", lecture_id).execute()
 
     except Exception as e:
