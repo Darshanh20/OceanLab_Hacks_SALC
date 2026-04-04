@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { lecturesAPI, organizationsAPI, groupsAPI } from "@/lib/api";
 import { Lecture } from "@/types";
 import { BookOpen, Calendar, Trash2, Upload, Mic, Building2, Users, Sparkles, MessageSquare, Share2, MoreHorizontal, Zap, CircleDot, Bot, ArrowRight, Lightbulb, FileQuestion, Layers, ChevronRight } from "lucide-react";
+import InlineActionDemo from "@/components/ui/demo";
 
 interface WorkspaceFilter {
     id: string;
@@ -297,6 +298,7 @@ export default function DashboardPage() {
                         <button className="btn btn-secondary" onClick={() => router.push("/record")}>
                             <Mic size={16} /> Record Meeting
                         </button>
+                        <InlineActionDemo />
                     </div>
                 </div>
             </section>

@@ -922,6 +922,7 @@ select.dashboard-select option {
   -webkit-text-fill-color: transparent;
   padding: 8px 12px;
   margin-bottom: 28px;
+  flex-shrink: 0;
 }
 
 .sidebar-context {
@@ -930,6 +931,7 @@ select.dashboard-select option {
   border-radius: var(--radius-md);
   border: 1px solid #222222;
   background: linear-gradient(135deg, rgba(0, 212, 255, 0.08), rgba(255, 107, 43, 0.04));
+  flex-shrink: 0;
 }
 
 .sidebar-context-label {
@@ -979,6 +981,10 @@ select.dashboard-select option {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
   flex: 1;
 }
 
@@ -1044,7 +1050,10 @@ select.dashboard-select option {
   letter-spacing: 0.08em;
   color: var(--text-muted);
   padding: 8px 14px 4px;
+    flex-shrink: 0;
+  margin-top: auto;
 }
+
 
 .sidebar-footer {
   padding: 14px;

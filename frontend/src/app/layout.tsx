@@ -1,11 +1,14 @@
+"use client";
+
 import type { Metadata } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
+import { SessionProvider } from "next-auth/react";
 
-export const metadata: Metadata = {
+// Note: Can't use metadata with "use client", but it's required for SessionProvider
+const metadata: Metadata = {
   title: "SyncMind AI",
-  description:
-    "Smart Meeting & Lecture Assistant for Teams",
+  description: "Smart Meeting & Lecture Assistant for Teams",
 };
 
 export default function RootLayout({
@@ -17,7 +20,9 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <div className="animated-bg" />
-        <AuthProvider>{children}</AuthProvider>
+        <SessionProvider>
+          <AuthProvider>{children}</AuthProvider>
+        </SessionProvider>
       </body>
     </html>
   );

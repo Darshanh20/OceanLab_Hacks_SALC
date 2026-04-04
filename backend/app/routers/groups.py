@@ -101,7 +101,11 @@ async def add_member(group_id: str, req: AddGroupMemberRequest, current_user: di
     assigned_role = "admin" if target_org_role in ["owner", "admin"] else req.role
     
     try:
-        return await GroupService.add_group_member(group_id, req.user_id, assigned_role)
+        # Get member email for notification
+        user_result = supabase.table("users").select("email").eq("id", req.user_id).execute()
+        notify_email = user_result.data[0].get("email") if user_result.data else None
+        
+        return await GroupService.add_group_member(group_id, req.user_id, assigned_role, notify_email=notify_email)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

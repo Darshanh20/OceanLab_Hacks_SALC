@@ -68,6 +68,8 @@ export const organizationsAPI = {
     delete: (orgId: string) => api.delete(`/api/organizations/${orgId}`),
     getMembers: (orgId: string) => api.get(`/api/organizations/${orgId}/members`),
     getRole: (orgId: string) => api.get(`/api/organizations/${orgId}/role`),
+    getInvites: (orgId: string) => api.get(`/api/organizations/${orgId}/invites`),
+    getPendingInvitations: () => api.get("/api/organizations/pending-invitations"),
     invite: (orgId: string, email: string, role: string = "member") =>
         api.post(`/api/organizations/${orgId}/invite`, { email, role }),
     removeMember: (orgId: string, userId: string) =>
@@ -140,6 +142,8 @@ export const analysisAPI = {
             group_id: groupId,
             force_refresh: forceRefresh,
         }),
+    dates: (lectureId: string) =>
+        api.post("/api/analysis/dates", { lecture_id: lectureId }),
 };
 
 export const exportAPI = {

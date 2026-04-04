@@ -867,3 +867,57 @@ def aggregate_workspace_action_plan(lecture_plans: list[dict]) -> tuple[str, dic
                 md_lines.append(f"- {title}")
 
     return "\n".join(md_lines), content_json
+
+
+# ──────────────────────────────────────
+# 8. IMPORTANT DATES EXTRACTION
+# ──────────────────────────────────────
+
+async def extract_important_dates(transcript: str) -> list[dict]:
+    """Extract important dates, deadlines, meetings and events from transcript."""
+    system = "You are an expert at identifying all important dates, deadlines, meetings, events and schedules from lecture transcripts."
+    user = f"""Extract all important dates, deadlines, meetings, events and schedules mentioned in this transcript.
+
+Return ONLY a valid JSON array, no explanation, no markdown:
+[
+  {{
+    "title": "event name",
+    "date": "YYYY-MM-DD",
+    "time": "HH:MM or null",
+    "description": "brief context from transcript"
+  }}
+]
+
+If no dates found return exactly: []
+
+TRANSCRIPT:
+{transcript}"""
+
+    try:
+        raw = await safe_groq_call(system, user, max_tokens=1000)
+        text = raw.strip()
+        
+        fence_match = re.search(r"```(?:json)?\s*(\[.*?\])\s*```", text, flags=re.IGNORECASE | re.DOTALL)
+        if fence_match:
+            text = fence_match.group(1).strip()
+        
+        text = re.sub(r"^[\s\S]*?\[", "[", text)
+        text = re.sub(r"\][\s\S]*?$", "]", text)
+        
+        if text.startswith("[") and text.endswith("]"):
+            dates = json.loads(text)
+            if isinstance(dates, list):
+                normalized_dates = []
+                for d in dates:
+                    if isinstance(d, dict):
+                        normalized_dates.append({
+                            "title": str(d.get("title", "")).strip() or "Event",
+                            "date": str(d.get("date", "")).strip() or None,
+                            "time": str(d.get("time", "")).strip() if d.get("time") else None,
+                            "description": str(d.get("description", "")).strip() or "",
+                        })
+                return [d for d in normalized_dates if d.get("date")]
+    except Exception:
+        pass
+    
+    return []

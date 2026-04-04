@@ -16,6 +16,7 @@ from app.services.analysis_service import (
     generate_lecture_action_plan,
     build_action_plan_sections,
     aggregate_workspace_action_plan,
+    extract_important_dates,
 )
 from app.services.cache_service import (
     ANALYSIS_TYPES,
@@ -65,6 +66,11 @@ class ActionPlanResponse(BaseModel):
 class ActionPlanSectionResponse(BaseModel):
     content: str
     content_json: Any
+    cached: bool = False
+
+
+class DatesResponse(BaseModel):
+    dates: list[dict[str, Any]]
     cached: bool = False
 
 
@@ -417,6 +423,28 @@ async def get_highlights(req: AnalysisRequest, current_user: dict = Depends(get_
         refresh=req.refresh,
     )
     return AnalysisResponse(content=content, analysis_type=analysis_type)
+
+
+@router.post("/dates", response_model=DatesResponse)
+async def get_important_dates(req: AnalysisRequest, current_user: dict = Depends(get_current_user)):
+    """Extract important dates from lecture (cached)."""
+    cache_key = "important_dates"
+    cached_content = _get_cached(req.lecture_id, cache_key)
+    if cached_content:
+        import json
+        try:
+            dates = json.loads(cached_content)
+            if isinstance(dates, list):
+                return DatesResponse(dates=dates, cached=True)
+        except Exception:
+            pass
+
+    transcript = await _get_transcript(req.lecture_id, current_user["user_id"])
+    dates = await extract_important_dates(transcript)
+    
+    import json
+    _save_cache(req.lecture_id, cache_key, json.dumps(dates))
+    return DatesResponse(dates=dates, cached=False)
 
 
 @router.post("/translate", response_model=AnalysisResponse)
