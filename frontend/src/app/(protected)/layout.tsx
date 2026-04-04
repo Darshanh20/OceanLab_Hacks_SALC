@@ -15,8 +15,14 @@ export default function ProtectedLayout({
     const router = useRouter();
 
     useEffect(() => {
-        if (!loading && !isAuthenticated) {
-            router.push("/login");
+        if (!loading) {
+            // Check both context auth and localStorage token as fallback
+            const tokenFromStorage = typeof window !== "undefined" ? localStorage.getItem("salc_token") : null;
+            const isAuth = isAuthenticated || !!tokenFromStorage;
+
+            if (!isAuth) {
+                router.push("/login");
+            }
         }
     }, [isAuthenticated, loading, router]);
 
@@ -29,7 +35,11 @@ export default function ProtectedLayout({
         );
     }
 
-    if (!isAuthenticated) {
+    // Allow render if either context is authenticated or localStorage has token
+    const tokenFromStorage = typeof window !== "undefined" ? localStorage.getItem("salc_token") : null;
+    const isAuth = isAuthenticated || !!tokenFromStorage;
+
+    if (!isAuth) {
         return null;
     }
 
