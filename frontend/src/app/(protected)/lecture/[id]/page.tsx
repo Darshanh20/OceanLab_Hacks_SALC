@@ -6,6 +6,7 @@ import { useSession, signIn } from "next-auth/react";
 import { lecturesAPI, analysisAPI, chatAPI, exportAPI } from "@/lib/api";
 import { Lecture, TranscriptData, ChatMessage, ActionTask, ActionPlanJson, ActionPlanSectionResponse } from "@/types";
 import TeamSuggestionModal from "@/components/TeamSuggestionModal";
+import { DiscreteTabs } from "@/components/ui/discrete-tabs";
 import ReactMarkdown from "react-markdown";
 import {
     FileText, BarChart3, BookOpen, Key, HelpCircle, Layers, Zap, MessageSquare,
@@ -366,6 +367,20 @@ export default function LectureDetailPage() {
         return !!lecture?.transcript_text;
     });
 
+    const discreteTabs = useMemo(
+        () =>
+            availableTabs.map((tab) => {
+                const Icon = tab.icon;
+                return {
+                    id: tab.key,
+                    label: tab.label,
+                    icon: <Icon size={15} />,
+                    activeColor: "#00D4FF",
+                };
+            }),
+        [availableTabs],
+    );
+
     useEffect(() => {
         const requestedTab = searchParams.get("tab");
         if (!requestedTab) return;
@@ -600,6 +615,12 @@ export default function LectureDetailPage() {
     };
 
     const handleAddToCalendar = async () => {
+        if (session?.error === "RefreshAccessTokenError" || session?.error === "MissingRefreshToken") {
+            setCalendarStatus('connecting');
+            await signIn('google');
+            return;
+        }
+
         if (!session?.accessToken) {
             setCalendarStatus('connecting');
             await signIn('google');
@@ -633,7 +654,7 @@ export default function LectureDetailPage() {
                 await addToCalendar(dates);
             })();
         }
-    }, [session, calendarStatus, importantDates]);
+    }, [session, calendarStatus, importantDates, fetchImportantDates]);
 
     const addToCalendar = async (dates: Array<{ title: string; date: string; time: string | null; description: string }>) => {
         setCalendarStatus('adding');
@@ -864,15 +885,12 @@ export default function LectureDetailPage() {
             {/* ── Tabs ── */}
             {availableTabs.length > 0 && (
                 <>
-                    <div className="tabs" style={{ animation: "fadeIn 0.3s ease" }}>
-                        {availableTabs.map((tab, i) => {
-                            const Icon = tab.icon;
-                            return (
-                                <button key={tab.key} className={`tab-btn ${activeTab === tab.key ? "active" : ""}`} onClick={() => setActiveTab(tab.key)} style={{ animation: "fadeIn 0.3s ease", animationDelay: `${i * 0.04}s`, animationFillMode: "both" }}>
-                                    <span className="tab-icon"><Icon size={15} /></span> {tab.label}
-                                </button>
-                            );
-                        })}
+                    <div style={{ animation: "fadeIn 0.3s ease" }}>
+                        <DiscreteTabs
+                            tabs={discreteTabs}
+                            value={activeTab}
+                            onChange={setActiveTab}
+                        />
                     </div>
 
                     <div className="tab-panel" style={{ animation: "fadeIn 0.35s ease" }}>
@@ -1212,7 +1230,6 @@ export default function LectureDetailPage() {
                             <div className="card" style={{ animation: "scaleIn 0.3s ease" }}>
                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px", flexWrap: "wrap", gap: "10px" }}>
                                     <h3 style={{ fontSize: "1rem", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}><BarChart3 size={16} /> Summary</h3>
-                                    {cachedFlags[currentCacheKey] && <span className="badge" style={{ background: "rgba(16,185,129,0.12)", color: "var(--accent-400)", fontSize: "0.7rem" }}><Sparkles size={11} /> Cached</span>}
                                 </div>
                                 <div className="sub-tabs">{SUMMARY_FORMATS.map((f) => {
                                     const FIcon = f.icon;
@@ -1228,7 +1245,6 @@ export default function LectureDetailPage() {
                             <div className="card" style={{ animation: "scaleIn 0.3s ease" }}>
                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
                                     <h3 style={{ fontSize: "1rem", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}><BookOpen size={16} /> Auto-Generated Notes</h3>
-                                    {cachedFlags["notes_default"] && <span className="badge" style={{ background: "rgba(16,185,129,0.12)", color: "var(--accent-400)", fontSize: "0.7rem" }}><Sparkles size={11} /> Cached</span>}
                                 </div>
                                 <TranslateBar lectureId={lectureId} content={analysisCache["notes_default"] || ""} translatedContent={activeTranslation ? translateCache[activeTranslation] : null} translating={translating} onTranslate={handleTranslate} onClear={() => setActiveTranslation(null)} />
                                 {renderAnalysisPanel("notes_default", "Loading...", () => { void fetchAnalysis("notes", undefined, true); })}
@@ -1240,7 +1256,6 @@ export default function LectureDetailPage() {
                             <div className="card" style={{ animation: "scaleIn 0.3s ease" }}>
                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
                                     <h3 style={{ fontSize: "1rem", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}><Key size={16} /> Keywords & Concepts</h3>
-                                    {cachedFlags["keywords_default"] && <span className="badge" style={{ background: "rgba(16,185,129,0.12)", color: "var(--accent-400)", fontSize: "0.7rem" }}><Sparkles size={11} /> Cached</span>}
                                 </div>
                                 <TranslateBar lectureId={lectureId} content={analysisCache["keywords_default"] || ""} translatedContent={activeTranslation ? translateCache[activeTranslation] : null} translating={translating} onTranslate={handleTranslate} onClear={() => setActiveTranslation(null)} />
                                 {renderAnalysisPanel("keywords_default", "Loading...", () => { void fetchAnalysis("keywords", undefined, true); })}
@@ -1279,9 +1294,6 @@ export default function LectureDetailPage() {
                                         <h3 style={{ fontSize: "1rem", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
                                             {(() => { const q = QUESTION_TYPES.find((q) => q.key === questionType); const QI = q?.icon || FileText; return <><QI size={16} /> {q?.label}</>; })()}
                                         </h3>
-                                        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                                            {cachedFlags[`questions_${questionType}`] && <span className="badge" style={{ background: "rgba(16,185,129,0.12)", color: "var(--accent-400)", fontSize: "0.7rem" }}><Sparkles size={11} /> Cached</span>}
-                                        </div>
                                     </div>
                                     <TranslateBar lectureId={lectureId} content={analysisCache[`questions_${questionType}`] || ""} translatedContent={activeTranslation ? translateCache[activeTranslation] : null} translating={translating} onTranslate={handleTranslate} onClear={() => setActiveTranslation(null)} />
                                     {renderAnalysisPanel(`questions_${questionType}`, "Select a question type above.", () => { void fetchAnalysis("questions", questionType, true); }, questionType === "flashcards")}
@@ -1294,7 +1306,6 @@ export default function LectureDetailPage() {
                             <div className="card" style={{ animation: "scaleIn 0.3s ease" }}>
                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
                                     <h3 style={{ fontSize: "1rem", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}><Layers size={16} /> Topic Segmentation</h3>
-                                    {cachedFlags["topics_default"]}
                                 </div>
                                 <TranslateBar lectureId={lectureId} content={analysisCache["topics_default"] || ""} translatedContent={activeTranslation ? translateCache[activeTranslation] : null} translating={translating} onTranslate={handleTranslate} onClear={() => setActiveTranslation(null)} />
                                 {renderAnalysisPanel("topics_default", "Loading...", () => { void fetchAnalysis("topics", undefined, true); })}
@@ -1306,7 +1317,6 @@ export default function LectureDetailPage() {
                             <div className="card" style={{ animation: "scaleIn 0.3s ease" }}>
                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
                                     <h3 style={{ fontSize: "1rem", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}><Zap size={16} /> Smart Highlights</h3>
-                                    {cachedFlags["highlights_default"] && <span className="badge" style={{ background: "rgba(16,185,129,0.12)", color: "var(--accent-400)", fontSize: "0.7rem" }}><Sparkles size={11} /> Cached</span>}
                                 </div>
                                 <TranslateBar lectureId={lectureId} content={analysisCache["highlights_default"] || ""} translatedContent={activeTranslation ? translateCache[activeTranslation] : null} translating={translating} onTranslate={handleTranslate} onClear={() => setActiveTranslation(null)} />
                                 {analysisLoading === "highlights_default" ? <AnalysisSkeleton /> : (
@@ -1320,7 +1330,6 @@ export default function LectureDetailPage() {
                             <div className="card" style={{ animation: "scaleIn 0.3s ease" }}>
                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
                                     <h3 style={{ fontSize: "1rem", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}><Calendar size={16} /> Important Dates</h3>
-                                    {datesCached && <span className="badge" style={{ background: "rgba(16,185,129,0.12)", color: "var(--accent-400)", fontSize: "0.7rem" }}><Sparkles size={11} /> Cached</span>}
                                 </div>
 
                                 {datesError && <div className="alert alert-error" style={{ marginBottom: "12px" }}>{datesError}</div>}
