@@ -118,7 +118,7 @@ export default function DashboardPage() {
             if (selectedOrgId || selectedGroupId) {
                 const orgFilter = selectedOrgId === "personal" ? undefined : selectedOrgId;
                 const response = await lecturesAPI.list(orgFilter || undefined, selectedGroupId || undefined);
-                setLectures(response.data.lectures || []);
+                setLectures(response.data.lectures || response.data || []);
                 return;
             }
 
@@ -127,12 +127,21 @@ export default function DashboardPage() {
                 lecturesAPI.list(undefined, undefined),
                 ...organizations.map((org) => lecturesAPI.list(org.id, undefined)),
             ];
-            const responses = await Promise.all(requests);
-            const merged = responses.flatMap((res) => res.data.lectures || []);
+            const responses = await Promise.allSettled(requests);
+            const merged = responses
+                .filter((result) => result.status === "fulfilled")
+                .flatMap((result) => {
+                    if (result.status === "fulfilled") {
+                        const res = result.value;
+                        return res.data.lectures || res.data || [];
+                    }
+                    return [];
+                });
             const deduped = Array.from(new Map(merged.map((lecture) => [lecture.id, lecture])).values());
             deduped.sort((a, b) => (new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()));
             setLectures(deduped);
-        } catch {
+        } catch (error) {
+            console.error("Error fetching lectures:", error);
             setLectures([]);
         } finally {
             setLoading(false);
@@ -157,8 +166,8 @@ export default function DashboardPage() {
                     setSelectedGroupId(queryGroupId);
                 }
                 setInitialized(true);
-            } catch {
-                console.error("Failed to fetch filters");
+            } catch (error) {
+                console.error("Failed to fetch filters:", error);
                 if (!initialized) {
                     setSelectedOrgId(null);
                     setInitialized(true);
@@ -372,6 +381,7 @@ export default function DashboardPage() {
                                 value={selectedOrgId || ""}
                                 onChange={(e) => handleOrgChange(e.target.value === "" ? null : e.target.value)}
                             >
+                                <option value="">All Workspaces</option>
                                 <option value="personal">Personal Space</option>
                                 {organizations.map((org) => (
                                     <option key={org.id} value={org.id}>{org.name}</option>
