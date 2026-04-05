@@ -17,7 +17,8 @@ allowed_origins = [
     "http://localhost:3001",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:3001",
-    "https://salc-app.vercel.app",  # The user's specific domain
+    "https://salc-app.vercel.app",
+    "https://ocean-lab-hacks-salc-kappa.vercel.app/",# The user's specific domain
 ]
 
 # Add production frontend URL if set
