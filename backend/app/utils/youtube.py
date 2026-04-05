@@ -8,20 +8,20 @@ from pathlib import Path
 
 def _resolve_ffmpeg_location() -> str | None:
     """Return a directory yt-dlp can use for FFmpeg, if available."""
-    if shutil.which("ffmpeg"):
-        return None
 
+    # ✅ 1. Check system-installed ffmpeg (Render/Linux)
+    ffmpeg_path = shutil.which("ffmpeg")
+    if ffmpeg_path:
+        return os.path.dirname(ffmpeg_path)  # returns /usr/bin
+
+    # ✅ 2. Fallback (Windows local dev)
     local_app_data = os.getenv("LOCALAPPDATA")
-    if not local_app_data:
-        return None
-
-    ffmpeg_root = Path(local_app_data) / "ffmpeg"
-    if not ffmpeg_root.exists():
-        return None
-
-    for bin_dir in ffmpeg_root.glob("**/bin"):
-        if (bin_dir / "ffmpeg.exe").exists():
-            return str(bin_dir)
+    if local_app_data:
+        ffmpeg_root = Path(local_app_data) / "ffmpeg"
+        if ffmpeg_root.exists():
+            for bin_dir in ffmpeg_root.glob("**/bin"):
+                if (bin_dir / "ffmpeg.exe").exists():
+                    return str(bin_dir)
 
     return None
 
