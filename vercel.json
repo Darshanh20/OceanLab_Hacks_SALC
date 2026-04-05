@@ -1,34 +1,10 @@
 {
   "version": 2,
-  "buildCommand": "cd frontend && npm install && npm run build",
-  "outputDirectory": "frontend/.next",
-  "public": true,
+  "buildCommand": "npm install && npm run build",
+  "outputDirectory": ".next",
+  "framework": "nextjs",
   "env": {
-    "NEXT_PUBLIC_API_BASE_URL": {
-      "description": "Backend API base URL",
-      "required": true,
-      "example": "https://oceanlab-hacks-salc.onrender.com"
-    },
-    "NEXT_PUBLIC_GOOGLE_CLIENT_ID": {
-      "description": "Google OAuth Client ID for authentication",
-      "required": false,
-      "example": "xxx.apps.googleusercontent.com"
-    },
-    "NEXTAUTH_SECRET": {
-      "description": "Secret key for NextAuth encryption",
-      "required": true,
-      "example": "your-secret-key-min-32-chars"
-    },
-    "NEXTAUTH_URL": {
-      "description": "NextAuth URL for callbacks",
-      "required": true,
-      "example": "https://yourapp.vercel.app"
-    }
-  },
-  "functions": {
-    "api/**/*.ts": {
-      "runtime": "nodejs18.x"
-    }
+    "NEXT_PUBLIC_API_BASE_URL": "https://oceanlab-hacks-salc.onrender.com"
   },
   "rewrites": [
     {
@@ -36,24 +12,22 @@
       "destination": "https://oceanlab-hacks-salc.onrender.com/api/:path*"
     }
   ],
-  "redirects": [
-    {
-      "source": "/old-page",
-      "destination": "/",
-      "permanent": true
-    }
-  ],
   "headers": [
     {
-      "source": "/api/:path*",
+      "source": "/:path*",
       "headers": [
         {
           "key": "Cache-Control",
-          "value": "no-cache, no-store, must-revalidate"
-        },
+          "value": "public, max-age=3600, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/_next/static/:path*",
+      "headers": [
         {
-          "key": "Content-Type",
-          "value": "application/json"
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
         }
       ]
     }
