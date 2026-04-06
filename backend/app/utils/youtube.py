@@ -3,7 +3,11 @@ import shutil
 import subprocess
 import tempfile
 import sys
+import logging
 from pathlib import Path
+
+
+logger = logging.getLogger(__name__)
 
 
 def _resolve_ffmpeg_location() -> str | None:
@@ -29,15 +33,21 @@ def _resolve_ffmpeg_location() -> str | None:
 async def download_youtube_audio(url: str, temp_dir: str) -> dict:
     """Download audio from YouTube video using yt-dlp"""
     try:
+        logger.info(f"[YOUTUBE] Starting yt-dlp download to temp_dir={temp_dir}")
         # Check if yt-dlp is installed
         try:
             subprocess.run([sys.executable, "-m", "yt_dlp", "--version"], capture_output=True, check=True, timeout=5)
         except (subprocess.CalledProcessError, FileNotFoundError):
+            logger.error("[YOUTUBE] yt-dlp not installed or not executable")
             raise ValueError("yt-dlp is not installed. Please install it using: pip install yt-dlp")
 
         ffmpeg_location = _resolve_ffmpeg_location()
         if ffmpeg_location is None and not shutil.which("ffmpeg"):
+            logger.error("[YOUTUBE] FFmpeg not found for yt-dlp post-processing")
             raise ValueError("FFmpeg is required but not installed. Please install FFmpeg (https://ffmpeg.org/download.html)")
+        logger.info(
+            f"[YOUTUBE] Dependencies ready ffmpeg_location={ffmpeg_location or 'system-path'}"
+        )
         
         output_template = os.path.join(temp_dir, "%(title)s.%(ext)s")
         
@@ -62,9 +72,14 @@ async def download_youtube_audio(url: str, temp_dir: str) -> dict:
             text=True,
             timeout=300,
         )
+        logger.info(
+            f"[YOUTUBE] yt-dlp process completed return_code={result.returncode} "
+            f"stderr_len={len(result.stderr or '')}"
+        )
         
         if result.returncode != 0:
             error_msg = result.stderr.lower()
+            logger.error(f"[YOUTUBE] yt-dlp failed: {result.stderr[:300]}")
             if "private" in error_msg or "unextractable" in error_msg:
                 raise ValueError("This YouTube video is private or unavailable for download")
             if "ffmpeg" in error_msg or "postprocessor" in error_msg:
@@ -74,10 +89,12 @@ async def download_youtube_audio(url: str, temp_dir: str) -> dict:
         # Find the downloaded MP3 file
         files = list(Path(temp_dir).glob("*.mp3"))
         if not files:
+            logger.error("[YOUTUBE] No MP3 output found in temp directory after yt-dlp run")
             raise ValueError("No audio file was generated - the download may have failed")
         
         file_path = str(files[0].absolute())
         title = files[0].stem
+        logger.info(f"[YOUTUBE] Download success title={title} file_path={file_path}")
         
         return {
             "file_path": file_path,
@@ -86,8 +103,10 @@ async def download_youtube_audio(url: str, temp_dir: str) -> dict:
             "source": "youtube",
         }
     except subprocess.TimeoutExpired:
+        logger.error("[YOUTUBE] yt-dlp timed out after 300 seconds")
         raise ValueError("Download timeout - video too long or connection issue. Please try a shorter video.")
     except ValueError:
         raise
     except Exception as e:
+        logger.error(f"[YOUTUBE] Unexpected download error: {str(e)}", exc_info=True)
         raise ValueError(f"YouTube download error: {str(e)[:200]}")

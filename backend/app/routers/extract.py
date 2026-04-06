@@ -7,7 +7,7 @@ import re
 import uuid
 import subprocess
 import mimetypes
-from urllib.parse import urlparse, unquote
+from urllib.parse import urlparse, unquote, parse_qs
 from fastapi import APIRouter, Form, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from pathlib import Path
@@ -265,6 +265,38 @@ def _format_mb(size_bytes: int) -> str:
     return f"{size_bytes / (1024 * 1024):.2f} MB"
 
 
+def _extract_youtube_video_id(url: str) -> Optional[str]:
+    """Extract YouTube video ID for safer structured logging."""
+    try:
+        parsed = urlparse(url)
+        host = (parsed.netloc or "").lower()
+        if "youtu.be" in host:
+            return (parsed.path or "").lstrip("/") or None
+        if "youtube.com" in host:
+            query = parse_qs(parsed.query or "")
+            video_id = (query.get("v") or [None])[0]
+            if video_id:
+                return video_id
+            # Handle /shorts/<id> and /embed/<id>
+            segments = [seg for seg in (parsed.path or "").split("/") if seg]
+            if len(segments) >= 2 and segments[0] in {"shorts", "embed", "live"}:
+                return segments[1]
+    except Exception:
+        return None
+    return None
+
+
+def _summarize_url(url: str) -> str:
+    """Create a concise URL summary to avoid noisy/sensitive logs."""
+    try:
+        parsed = urlparse(url)
+        host = parsed.netloc or "unknown-host"
+        path = parsed.path or "/"
+        return f"{host}{path}"
+    except Exception:
+        return "invalid-url"
+
+
 def _emit_info(message: str) -> None:
     # Print guarantees visibility in uvicorn stdout even when logger handlers differ.
     print(message)
@@ -339,11 +371,24 @@ async def _upload_and_process_link(
 
         _safe_update_lecture(supabase, lecture_id, {"status": STAGE_STATUS["downloading"]})
         link_type = _detect_link_type(url)
+        logger.info(
+            f"[LINK] lecture={lecture_id} detected link_type={link_type} "
+            f"url={_summarize_url(url)}"
+        )
         if link_type == "unknown":
             raise ValueError("Invalid URL. Supported: YouTube, Google Drive, or direct media link")
 
         if link_type == "youtube":
+            yt_video_id = _extract_youtube_video_id(url)
+            logger.info(
+                f"[YOUTUBE] lecture={lecture_id} starting download "
+                f"video_id={yt_video_id or 'unknown'} url={_summarize_url(url)}"
+            )
             download_result = await download_youtube_audio(url, temp_dir)
+            logger.info(
+                f"[YOUTUBE] lecture={lecture_id} download completed "
+                f"source={download_result.get('source', 'youtube')}"
+            )
         elif link_type == "google_drive":
             download_result = await download_drive_file(
                 url,
@@ -599,6 +644,15 @@ async def process_link(
             raise HTTPException(status_code=403, detail="Permission denied")
         
         link_type = _detect_link_type(url)
+        logger.info(
+            f"[LINK REQUEST] user={current_user.get('user_id')} link_type={link_type} "
+            f"url={_summarize_url(url)}"
+        )
+        if link_type == "youtube":
+            logger.info(
+                f"[YOUTUBE REQUEST] user={current_user.get('user_id')} "
+                f"video_id={_extract_youtube_video_id(url) or 'unknown'}"
+            )
         if link_type == "unknown":
             raise ValueError(
                 "Invalid URL. Supported: YouTube, Google Drive, or direct audio/video file links (.mp3/.mp4/etc)."
