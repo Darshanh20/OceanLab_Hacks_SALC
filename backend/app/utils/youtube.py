@@ -56,6 +56,7 @@ async def download_youtube_audio(url: str, temp_dir: str) -> dict:
             sys.executable,
             "-m",
             "yt_dlp",
+            "--js-runtimes","node",
             "-f", "bestaudio/best",
             "--extract-audio",
             "--audio-format", "mp3",
